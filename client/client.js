@@ -4,27 +4,11 @@ const taskInput = document.getElementById("taskInput");
 const submitBtn = document.getElementById("submitBtn");
 const statusBtn = document.getElementById("statusBtn");
 const diffBtn = document.getElementById("diffBtn");
-const newSessionBtn = document.getElementById("newSessionBtn");
+const archiveBtn = document.getElementById("archiveBtn");
 
 let ws;
 let isProcessing = false;
-let currentSessionId = null;
 let interruptedTask = null;
-
-// Session management
-function saveSessionId(sessionId) {
-  localStorage.setItem("sense_session_id", sessionId);
-  currentSessionId = sessionId;
-}
-
-function loadSessionId() {
-  return localStorage.getItem("sense_session_id");
-}
-
-function clearSessionId() {
-  localStorage.removeItem("sense_session_id");
-  currentSessionId = null;
-}
 
 function showRetryPrompt(task) {
   const retryDiv = document.createElement("div");
@@ -99,7 +83,7 @@ function setProcessing(processing) {
   submitBtn.disabled = processing;
   statusBtn.disabled = processing;
   diffBtn.disabled = processing;
-  newSessionBtn.disabled = processing;
+  archiveBtn.disabled = processing;
   taskInput.disabled = processing;
 }
 
@@ -110,14 +94,7 @@ function connect() {
   ws.onopen = () => {
     statusEl.textContent = "Connected";
     statusEl.classList.add("connected");
-
-    // Try to resume previous session
-    const savedSessionId = loadSessionId();
-    if (savedSessionId) {
-      ws.send(JSON.stringify({ type: "resume_session", sessionId: savedSessionId }));
-    } else {
-      ws.send(JSON.stringify({ type: "new_session" }));
-    }
+    // Server will automatically send session info on connect
   };
 
   ws.onclose = () => {
@@ -138,9 +115,20 @@ function connect() {
     const message = JSON.parse(event.data);
 
     switch (message.type) {
-      case "session_id":
-        saveSessionId(message.sessionId);
-        console.log(`Session ID: ${message.sessionId}, Messages: ${message.messageCount}`);
+      case "session_info":
+        console.log(`Session loaded: ${message.messageCount} messages`);
+
+        // Display history
+        if (message.history && message.history.length > 0) {
+          output.innerHTML = ""; // Clear welcome message
+          for (const entry of message.history) {
+            if (entry.isTask) {
+              addLog(`📋 Previous task: ${entry.content}`, "info");
+            }
+          }
+          addLog("─".repeat(50), "info");
+          addLog("Connected to Sense server", "success");
+        }
 
         // Handle interrupted task
         if (message.interruptedTask) {
@@ -197,13 +185,12 @@ diffBtn.onclick = () => {
   ws.send(JSON.stringify({ type: "git.diff" }));
 };
 
-newSessionBtn.onclick = () => {
+archiveBtn.onclick = () => {
   if (isProcessing) return;
-  if (confirm("Start a new session? This will clear the current conversation context.")) {
-    clearSessionId();
+  if (confirm("Archive current session and start fresh? The current session will be saved to .sense/archives/")) {
     output.innerHTML = "";
-    addLog("Starting new session...", "info");
-    ws.send(JSON.stringify({ type: "new_session" }));
+    addLog("Archiving session...", "info");
+    ws.send(JSON.stringify({ type: "archive_session" }));
   }
 };
 

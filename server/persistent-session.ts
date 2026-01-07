@@ -1,7 +1,8 @@
 import { join } from "jsr:@std/path@^1.0.0";
 import { exists } from "jsr:@std/fs@^1.0.0";
 
-const SESSIONS_DIR = join(Deno.cwd(), ".sense", "active-sessions");
+const SENSE_DIR = join(Deno.cwd(), ".sense");
+const CURRENT_SESSION_PATH = join(SENSE_DIR, "current-session.json");
 
 export interface ConversationMessage {
   role: "user" | "assistant";
@@ -22,7 +23,6 @@ export interface SessionData {
 
 export class PersistentSession {
   private sessionId: string;
-  private sessionPath: string;
   private messages: ConversationMessage[] = [];
   private currentTask?: {
     task: string;
@@ -30,26 +30,22 @@ export class PersistentSession {
     status: "running" | "completed" | "failed";
   };
 
-  constructor(sessionId?: string) {
-    this.sessionId = sessionId || this.generateSessionId();
-    this.sessionPath = join(SESSIONS_DIR, `${this.sessionId}.json`);
-  }
-
-  private generateSessionId(): string {
-    return `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  constructor() {
+    this.sessionId = "current";
   }
 
   async load(): Promise<boolean> {
     try {
-      await Deno.mkdir(SESSIONS_DIR, { recursive: true });
+      await Deno.mkdir(SENSE_DIR, { recursive: true });
 
-      if (await exists(this.sessionPath)) {
-        const data = await Deno.readTextFile(this.sessionPath);
+      if (await exists(CURRENT_SESSION_PATH)) {
+        const data = await Deno.readTextFile(CURRENT_SESSION_PATH);
         const sessionData: SessionData = JSON.parse(data);
         this.messages = sessionData.messages;
         this.currentTask = sessionData.currentTask;
+        this.sessionId = sessionData.id;
         await this.updateLastActive();
-        console.log(`Loaded session ${this.sessionId} with ${this.messages.length} messages`);
+        console.log(`Loaded current session with ${this.messages.length} messages`);
         if (this.currentTask?.status === "running") {
           console.log(`⚠️  Session has interrupted task: "${this.currentTask.task}"`);
         }
@@ -58,10 +54,10 @@ export class PersistentSession {
 
       // New session
       await this.save();
-      console.log(`Created new session ${this.sessionId}`);
+      console.log(`Created new current session`);
       return false;
     } catch (error) {
-      console.error(`Failed to load session ${this.sessionId}:`, error);
+      console.error(`Failed to load session:`, error);
       return false;
     }
   }
@@ -76,17 +72,17 @@ export class PersistentSession {
         ...(this.currentTask && { currentTask: this.currentTask }),
       };
 
-      await Deno.mkdir(SESSIONS_DIR, { recursive: true });
-      await Deno.writeTextFile(this.sessionPath, JSON.stringify(sessionData, null, 2));
+      await Deno.mkdir(SENSE_DIR, { recursive: true });
+      await Deno.writeTextFile(CURRENT_SESSION_PATH, JSON.stringify(sessionData, null, 2));
     } catch (error) {
-      console.error(`Failed to save session ${this.sessionId}:`, error);
+      console.error(`Failed to save session:`, error);
     }
   }
 
   private async getCreatedTime(): Promise<string> {
     try {
-      if (await exists(this.sessionPath)) {
-        const data = await Deno.readTextFile(this.sessionPath);
+      if (await exists(CURRENT_SESSION_PATH)) {
+        const data = await Deno.readTextFile(CURRENT_SESSION_PATH);
         const sessionData: SessionData = JSON.parse(data);
         return sessionData.created;
       }
@@ -98,11 +94,11 @@ export class PersistentSession {
 
   private async updateLastActive(): Promise<void> {
     try {
-      if (await exists(this.sessionPath)) {
-        const data = await Deno.readTextFile(this.sessionPath);
+      if (await exists(CURRENT_SESSION_PATH)) {
+        const data = await Deno.readTextFile(CURRENT_SESSION_PATH);
         const sessionData: SessionData = JSON.parse(data);
         sessionData.lastActive = new Date().toISOString();
-        await Deno.writeTextFile(this.sessionPath, JSON.stringify(sessionData, null, 2));
+        await Deno.writeTextFile(CURRENT_SESSION_PATH, JSON.stringify(sessionData, null, 2));
       }
     } catch {
       // Ignore
@@ -134,12 +130,12 @@ export class PersistentSession {
 
   async delete(): Promise<void> {
     try {
-      if (await exists(this.sessionPath)) {
-        await Deno.remove(this.sessionPath);
-        console.log(`Deleted session ${this.sessionId}`);
+      if (await exists(CURRENT_SESSION_PATH)) {
+        await Deno.remove(CURRENT_SESSION_PATH);
+        console.log(`Deleted current session`);
       }
     } catch (error) {
-      console.error(`Failed to delete session ${this.sessionId}:`, error);
+      console.error(`Failed to delete session:`, error);
     }
   }
 
@@ -180,27 +176,22 @@ export class PersistentSession {
   }
 }
 
-// Cleanup old sessions (optional, can be called periodically)
-export async function cleanupOldSessions(maxAgeMs: number = 24 * 60 * 60 * 1000): Promise<void> {
+// Archive current session (create timestamped backup)
+export async function archiveCurrentSession(): Promise<void> {
   try {
-    await Deno.mkdir(SESSIONS_DIR, { recursive: true });
+    if (await exists(CURRENT_SESSION_PATH)) {
+      const archiveDir = join(SENSE_DIR, "archives");
+      await Deno.mkdir(archiveDir, { recursive: true });
 
-    for await (const entry of Deno.readDir(SESSIONS_DIR)) {
-      if (entry.isFile && entry.name.endsWith(".json")) {
-        const filePath = join(SESSIONS_DIR, entry.name);
-        const data = await Deno.readTextFile(filePath);
-        const sessionData: SessionData = JSON.parse(data);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").replace("Z", "");
+      const archivePath = join(archiveDir, `session_${timestamp}.json`);
 
-        const lastActive = new Date(sessionData.lastActive).getTime();
-        const now = Date.now();
+      const data = await Deno.readTextFile(CURRENT_SESSION_PATH);
+      await Deno.writeTextFile(archivePath, data);
 
-        if (now - lastActive > maxAgeMs) {
-          await Deno.remove(filePath);
-          console.log(`Cleaned up old session: ${entry.name}`);
-        }
-      }
+      console.log(`Archived current session to ${archivePath}`);
     }
   } catch (error) {
-    console.error("Failed to cleanup old sessions:", error);
+    console.error("Failed to archive session:", error);
   }
 }

@@ -1,20 +1,21 @@
 import { load } from "jsr:@std/dotenv@^0.225.0";
 import { executeTaskWithClaude } from "./claude.ts";
 import { SessionLogger } from "./session.ts";
-import { PersistentSession } from "./persistent-session.ts";
+import { PersistentSession, archiveCurrentSession } from "./persistent-session.ts";
 
 // Load .env file
 await load({ export: true });
 
+// Global session (shared across all clients)
+const globalSession = new PersistentSession();
+await globalSession.load();
+
 type ClientMessage =
   | { type: "task"; content: string }
-  | { type: "resume_session"; sessionId: string }
-  | { type: "new_session" }
-  | { type: "git.status" }
-  | { type: "git.diff" };
+  | { type: "archive_session" };
 
 type ServerMessage =
-  | { type: "session_id"; sessionId: string; messageCount: number; interruptedTask?: string }
+  | { type: "session_info"; messageCount: number; interruptedTask?: string; history: Array<{role: string; content: string; isTask?: boolean}> }
   | { type: "log"; content: string; level: "info" | "error" | "success" | "tool" }
   | { type: "thinking"; content: string }
   | { type: "tool_use"; toolName: string; input: unknown }
@@ -48,82 +49,64 @@ async function serveFile(path: string): Promise<Response> {
 function handleWebSocket(socket: WebSocket) {
   console.log("Client connected");
 
-  // Session will be created/loaded when client sends session info
-  let persistentSession: PersistentSession | null = null;
   const sessionLogger = new SessionLogger();
 
   function send(msg: ServerMessage) {
     socket.send(JSON.stringify(msg));
   }
 
+  // Send session info immediately on connect
+  const interruptedTask = globalSession.getInterruptedTask();
+  const messages = globalSession.getMessages();
+
+  // Build history for client display
+  const history: Array<{role: string; content: string; isTask?: boolean}> = [];
+  for (const msg of messages) {
+    if (msg.role === "user") {
+      history.push({
+        role: "user",
+        content: msg.content as string,
+        isTask: true,
+      });
+    } else if (msg.role === "assistant") {
+      // Skip assistant messages for now (they're tool use JSON)
+      // We'll just show user tasks
+    }
+  }
+
+  send({
+    type: "session_info",
+    messageCount: messages.length,
+    ...(interruptedTask && { interruptedTask }),
+    history,
+  });
+
+  if (interruptedTask) {
+    send({
+      type: "log",
+      content: `⚠️  Found interrupted task: "${interruptedTask}"`,
+      level: "info",
+    });
+  }
+
   socket.onmessage = async (event) => {
     try {
       const message: ClientMessage = JSON.parse(event.data);
 
-      // Handle session management
-      if (message.type === "resume_session") {
-        persistentSession = new PersistentSession(message.sessionId);
-        const loaded = await persistentSession.load();
-        const interruptedTask = persistentSession.getInterruptedTask();
-
-        send({
-          type: "session_id",
-          sessionId: persistentSession.getSessionId(),
-          messageCount: persistentSession.getMessageCount(),
-          ...(interruptedTask && { interruptedTask }),
-        });
-
-        if (loaded) {
-          send({
-            type: "log",
-            content: `📂 Resumed session with ${persistentSession.getMessageCount()} messages`,
-            level: "info",
-          });
-
-          if (interruptedTask) {
-            send({
-              type: "log",
-              content: `⚠️  Found interrupted task: "${interruptedTask}"`,
-              level: "info",
-            });
-            send({
-              type: "log",
-              content: `💡 You can retry it or start a new task`,
-              level: "info",
-            });
-          }
-        }
-        return;
-      }
-
-      if (message.type === "new_session") {
-        persistentSession = new PersistentSession();
-        await persistentSession.load();
-        send({
-          type: "session_id",
-          sessionId: persistentSession.getSessionId(),
-          messageCount: 0,
-        });
+      if (message.type === "archive_session") {
+        await archiveCurrentSession();
+        await globalSession.clear();
         send({
           type: "log",
-          content: `✨ New session started`,
-          level: "info",
+          content: `✨ Session archived. Starting fresh!`,
+          level: "success",
+        });
+        send({
+          type: "session_info",
+          messageCount: 0,
+          history: [],
         });
         return;
-      }
-
-      // Ensure we have a session
-      if (!persistentSession) {
-        persistentSession = new PersistentSession();
-        await persistentSession.load();
-        const interruptedTask = persistentSession.getInterruptedTask();
-
-        send({
-          type: "session_id",
-          sessionId: persistentSession.getSessionId(),
-          messageCount: persistentSession.getMessageCount(),
-          ...(interruptedTask && { interruptedTask }),
-        });
       }
 
       if (message.type === "task") {
@@ -132,17 +115,17 @@ function handleWebSocket(socket: WebSocket) {
 
         try {
           // Mark task as started
-          persistentSession.startTask(message.content);
+          globalSession.startTask(message.content);
 
           // Add user message to persistent session
-          persistentSession.addMessage({
+          globalSession.addMessage({
             role: "user",
             content: message.content,
           });
 
           // Execute task with Claude using tool use
           let taskComplete = false;
-          const conversationHistory = persistentSession.getMessages();
+          const conversationHistory = globalSession.getMessages();
           for await (const chunk of executeTaskWithClaude(message.content, conversationHistory)) {
             if (chunk.type === "text") {
               send({ type: "log", content: chunk.content, level: "info" });
@@ -175,7 +158,7 @@ function handleWebSocket(socket: WebSocket) {
           }
 
           // Mark task as complete
-          persistentSession.completeTask();
+          globalSession.completeTask();
 
           // Log to session
           await sessionLogger.logTask(
@@ -198,7 +181,7 @@ function handleWebSocket(socket: WebSocket) {
           const errorMsg = error instanceof Error ? error.message : String(error);
 
           // Mark task as failed
-          persistentSession.failTask();
+          globalSession.failTask();
 
           send({
             type: "log",
