@@ -45,21 +45,26 @@ Response:
   "actions": [
     {"type": "fs.writeFile", "path": "hello.txt", "content": "Hello, World!"}
   ],
-  "final": "Created hello.txt"
+  "final": "Created hello.txt with 'Hello, World!'"
 }
 
-Task: "Read the README and list files"
+Task: "Add a clear button to the UI"
 Response:
 {
-  "thought_summary": "Read README.md then list current directory",
+  "thought_summary": "Read index.html, add clear button to controls, update client.js with handler",
   "actions": [
-    {"type": "fs.readFile", "path": "README.md"},
-    {"type": "fs.listDir", "path": "."}
+    {"type": "fs.readFile", "path": "client/index.html"},
+    {"type": "fs.writeFile", "path": "client/index.html", "content": "<!DOCTYPE html>...with new button..."},
+    {"type": "fs.readFile", "path": "client/client.js"},
+    {"type": "fs.writeFile", "path": "client/client.js", "content": "...with clear handler..."}
   ],
-  "final": "Read README and listed files"
+  "final": "Added clear button to UI with click handler that clears output"
 }
 
 CRITICAL RULES:
+- TASK COMPLETION: If task says "add X", "create X", "update X" - X MUST be created/modified in your actions
+- fs.readFile is PREPARATION only - you must fs.writeFile to actually complete modification tasks
+- "final" message must describe what was ACTUALLY DONE, not what was planned or read
 - Output ONLY the JSON object - no explanations, no markdown, no code blocks
 - Every action must be explicit in the actions array
 - All paths relative to: ${Deno.cwd()}
