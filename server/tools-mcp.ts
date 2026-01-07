@@ -101,21 +101,45 @@ export async function executeTool(
   try {
     switch (name) {
       case "read_file": {
-        const path = sanitizePath(input.path as string);
+        if (!input.path || typeof input.path !== "string") {
+          return {
+            content: "Path is required and must be a string",
+            isError: true,
+          };
+        }
+        const path = sanitizePath(input.path);
         const content = await Deno.readTextFile(path);
         return { content, isError: false };
       }
 
       case "write_file": {
-        const path = sanitizePath(input.path as string);
-        const content = input.content as string;
+        if (!input.path || typeof input.path !== "string") {
+          return {
+            content: "Path is required and must be a string",
+            isError: true,
+          };
+        }
+        if (input.content === undefined || typeof input.content !== "string") {
+          return {
+            content: "Content is required and must be a string",
+            isError: true,
+          };
+        }
+        const path = sanitizePath(input.path);
         await Deno.mkdir(dirname(path), { recursive: true });
-        await Deno.writeTextFile(path, content);
+        await Deno.writeTextFile(path, input.content);
         return { content: `Successfully wrote ${input.path}`, isError: false };
       }
 
       case "list_directory": {
-        const path = sanitizePath(input.path as string);
+        const pathInput = input.path || ".";
+        if (typeof pathInput !== "string") {
+          return {
+            content: `Path must be a string, received "${typeof pathInput}". Use "." for current directory.`,
+            isError: true,
+          };
+        }
+        const path = sanitizePath(pathInput);
         const entries: string[] = [];
         for await (const entry of Deno.readDir(path)) {
           entries.push(entry.name);
@@ -124,7 +148,13 @@ export async function executeTool(
       }
 
       case "execute_command": {
-        const cmd = (input.command as string).split(" ");
+        if (!input.command || typeof input.command !== "string") {
+          return {
+            content: "Command is required and must be a string",
+            isError: true,
+          };
+        }
+        const cmd = input.command.split(" ");
         const process = new Deno.Command(cmd[0], {
           args: cmd.slice(1),
           cwd: BASE_DIR,
@@ -148,11 +178,16 @@ export async function executeTool(
       }
 
       case "search_files": {
-        const pattern = input.pattern as string;
-        const searchPath = input.path as string || ".";
+        if (!input.pattern || typeof input.pattern !== "string") {
+          return {
+            content: "Pattern is required and must be a string",
+            isError: true,
+          };
+        }
+        const searchPath = input.path || ".";
 
         const process = new Deno.Command("grep", {
-          args: ["-r", "-n", pattern, searchPath],
+          args: ["-r", "-n", input.pattern, searchPath as string],
           cwd: BASE_DIR,
           stdout: "piped",
           stderr: "piped",
