@@ -10,13 +10,15 @@ The system is designed to **write and evolve itself** through structured agent i
 
 ## Architecture Philosophy
 
-### Core Loop
+### Core Loop (Agentic)
 1. Browser UI sends task/command
-2. Server routes to Agent (Claude)
-3. Agent replies with **structured actions** (JSON only)
+2. Server builds project context (file tree, git status, README)
+3. Agent receives context + task, replies with **structured actions** (JSON only)
 4. Server executes actions (file system, commands, git)
-5. Results stream back to browser
-6. System extends itself through this loop
+5. **If actions fail**: Error feedback sent back to agent, loop repeats (max 5 iterations)
+6. Results stream back to browser
+7. Session logged to `.sense/sessions/`
+8. System extends itself through this loop
 
 ### Critical Constraint: Structured Output Only
 
@@ -50,16 +52,19 @@ Agent responses MUST be strict JSON with this schema:
 ## Repository Structure
 
 ```
-/server       - Core server (Deno/Node + WebSocket)
-  agent.ts    - Agent coordination
-  tools.ts    - Tool execution (fs, proc, git)
-  protocol.ts - JSON schema validation
-  websocket.ts - Client communication
-/client       - Browser UI (thin renderer)
-  index.html
-  client.ts
-/.sense       - Runtime state
-  sessions/   - Persistent session logs
+/server         - Core server (Deno + WebSocket)
+  main.ts       - HTTP + WebSocket server
+  agent.ts      - Claude API integration
+  executor.ts   - Agentic task execution with retry loop
+  context.ts    - Auto-context builder (file tree, git, README)
+  session.ts    - Session logging
+  tools.ts      - Action execution (fs, proc, git)
+  protocol.ts   - Type definitions and validation
+/client         - Browser UI (thin renderer)
+  index.html    - UI layout and styles
+  client.ts/js  - WebSocket client
+/.sense         - Runtime state
+  sessions/     - Persistent session logs (JSON)
 ```
 
 ## Tool Set (v0)
@@ -80,29 +85,46 @@ Agent responses MUST be strict JSON with this schema:
 
 ## Development Commands
 
-**Note:** Commands will be established once initial bootstrap is complete. During bootstrap phase, the system will be built to define its own development workflow.
+```bash
+# Start server with auto-reload
+deno task dev
 
-Initial development targets:
-- Start server: `deno run -A server/main.ts` (or equivalent)
-- Run tests: `deno test -A` (or equivalent)
-- Build client: TBD based on chosen tooling
+# Start server (production)
+deno task start
+
+# Run tests
+deno task test
+```
+
+The server requires `ANTHROPIC_API_KEY` in environment or `.env` file.
 
 ## Key Development Principles
 
 1. **No Manual Edits**: Once self-hosting is achieved, all changes happen through the browser UI commanding the agent
-2. **Explicit Context**: Agent must be given all necessary context to make decisions
-3. **Small Steps**: Changes should be small and verifiable
-4. **Diff Visibility**: All changes must be reviewable as diffs
-5. **Structured Only**: No free-form agent responses - structured actions only
+2. **Auto Context**: Agent automatically receives project file tree, git status, and README
+3. **Iterative Execution**: Agent retries up to 5 times if actions fail, learning from errors
+4. **Small Steps**: Changes should be small and verifiable
+5. **Diff Visibility**: All changes must be reviewable as diffs (use Git Diff button)
+6. **Structured Only**: No free-form agent responses - structured actions only
+7. **Session Logging**: All tasks logged to `.sense/sessions/` for audit trail
 
-## Self-Hosting Flip Criteria
+## Current Status: Agentic v0.2
 
-The system becomes self-hosting when:
+The system now has:
+- ✅ Agentic execution with retry loop (up to 5 iterations)
+- ✅ Automatic project context injection
+- ✅ Session logging to `.sense/sessions/`
+- ✅ Error recovery and self-correction
+- ✅ Git integration for tracking changes
+
+**Self-Hosting Criteria** (ready to test):
 - Agent can add a server endpoint
 - Agent can modify the UI
 - Agent can run tests/build
-- Agent can show diffs in browser
+- Agent knows it's a Deno project
 - No external code editing needed
+
+The system is now ready for **true dogfooding** - command it to improve itself!
 
 ## Postponed Features (Do Not Implement Yet)
 
