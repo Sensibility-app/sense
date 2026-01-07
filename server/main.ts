@@ -1,16 +1,20 @@
 import { load } from "jsr:@std/dotenv@^0.225.0";
 import { executeTaskWithClaude } from "./claude.ts";
 import { SessionLogger } from "./session.ts";
+import { PersistentSession } from "./persistent-session.ts";
 
 // Load .env file
 await load({ export: true });
 
 type ClientMessage =
   | { type: "task"; content: string }
+  | { type: "resume_session"; sessionId: string }
+  | { type: "new_session" }
   | { type: "git.status" }
   | { type: "git.diff" };
 
 type ServerMessage =
+  | { type: "session_id"; sessionId: string; messageCount: number }
   | { type: "log"; content: string; level: "info" | "error" | "success" | "tool" }
   | { type: "thinking"; content: string }
   | { type: "tool_use"; toolName: string; input: unknown }
@@ -44,7 +48,8 @@ async function serveFile(path: string): Promise<Response> {
 function handleWebSocket(socket: WebSocket) {
   console.log("Client connected");
 
-  // Create session logger for this connection
+  // Session will be created/loaded when client sends session info
+  let persistentSession: PersistentSession | null = null;
   const sessionLogger = new SessionLogger();
 
   function send(msg: ServerMessage) {
@@ -55,14 +60,67 @@ function handleWebSocket(socket: WebSocket) {
     try {
       const message: ClientMessage = JSON.parse(event.data);
 
+      // Handle session management
+      if (message.type === "resume_session") {
+        persistentSession = new PersistentSession(message.sessionId);
+        const loaded = await persistentSession.load();
+        send({
+          type: "session_id",
+          sessionId: persistentSession.getSessionId(),
+          messageCount: persistentSession.getMessageCount(),
+        });
+        if (loaded) {
+          send({
+            type: "log",
+            content: `📂 Resumed session with ${persistentSession.getMessageCount()} messages`,
+            level: "info",
+          });
+        }
+        return;
+      }
+
+      if (message.type === "new_session") {
+        persistentSession = new PersistentSession();
+        await persistentSession.load();
+        send({
+          type: "session_id",
+          sessionId: persistentSession.getSessionId(),
+          messageCount: 0,
+        });
+        send({
+          type: "log",
+          content: `✨ New session started`,
+          level: "info",
+        });
+        return;
+      }
+
+      // Ensure we have a session
+      if (!persistentSession) {
+        persistentSession = new PersistentSession();
+        await persistentSession.load();
+        send({
+          type: "session_id",
+          sessionId: persistentSession.getSessionId(),
+          messageCount: persistentSession.getMessageCount(),
+        });
+      }
+
       if (message.type === "task") {
         const startTime = Date.now();
         send({ type: "log", content: "🤖 Claude is working on your task...", level: "info" });
 
         try {
+          // Add user message to persistent session
+          persistentSession.addMessage({
+            role: "user",
+            content: message.content,
+          });
+
           // Execute task with Claude using tool use
           let taskComplete = false;
-          for await (const chunk of executeTaskWithClaude(message.content)) {
+          const conversationHistory = persistentSession.getMessages();
+          for await (const chunk of executeTaskWithClaude(message.content, conversationHistory)) {
             if (chunk.type === "text") {
               send({ type: "log", content: chunk.content, level: "info" });
             } else if (chunk.type === "tool_use") {

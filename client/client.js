@@ -4,9 +4,26 @@ const taskInput = document.getElementById("taskInput");
 const submitBtn = document.getElementById("submitBtn");
 const statusBtn = document.getElementById("statusBtn");
 const diffBtn = document.getElementById("diffBtn");
+const newSessionBtn = document.getElementById("newSessionBtn");
 
 let ws;
 let isProcessing = false;
+let currentSessionId = null;
+
+// Session management
+function saveSessionId(sessionId) {
+  localStorage.setItem("sense_session_id", sessionId);
+  currentSessionId = sessionId;
+}
+
+function loadSessionId() {
+  return localStorage.getItem("sense_session_id");
+}
+
+function clearSessionId() {
+  localStorage.removeItem("sense_session_id");
+  currentSessionId = null;
+}
 
 function addLog(content, level = "info") {
   const entry = document.createElement("div");
@@ -41,6 +58,7 @@ function setProcessing(processing) {
   submitBtn.disabled = processing;
   statusBtn.disabled = processing;
   diffBtn.disabled = processing;
+  newSessionBtn.disabled = processing;
   taskInput.disabled = processing;
 }
 
@@ -51,7 +69,14 @@ function connect() {
   ws.onopen = () => {
     statusEl.textContent = "Connected";
     statusEl.classList.add("connected");
-    addLog("Connected to Sense server", "success");
+
+    // Try to resume previous session
+    const savedSessionId = loadSessionId();
+    if (savedSessionId) {
+      ws.send(JSON.stringify({ type: "resume_session", sessionId: savedSessionId }));
+    } else {
+      ws.send(JSON.stringify({ type: "new_session" }));
+    }
   };
 
   ws.onclose = () => {
@@ -72,6 +97,11 @@ function connect() {
     const message = JSON.parse(event.data);
 
     switch (message.type) {
+      case "session_id":
+        saveSessionId(message.sessionId);
+        console.log(`Session ID: ${message.sessionId}, Messages: ${message.messageCount}`);
+        break;
+
       case "log":
         addLog(message.content, message.level);
         break;
@@ -120,12 +150,59 @@ diffBtn.onclick = () => {
   ws.send(JSON.stringify({ type: "git.diff" }));
 };
 
+newSessionBtn.onclick = () => {
+  if (isProcessing) return;
+  if (confirm("Start a new session? This will clear the current conversation context.")) {
+    clearSessionId();
+    output.innerHTML = "";
+    addLog("Starting new session...", "info");
+    ws.send(JSON.stringify({ type: "new_session" }));
+  }
+};
+
 taskInput.onkeydown = (e) => {
-  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+  if (e.key === "Enter") {
+    // Allow Shift+Enter for new lines, but submit on just Enter
+    if (e.shiftKey) {
+      return; // Let the default behavior happen (new line)
+    }
+
     e.preventDefault();
     submitBtn.click();
   }
 };
+
+// Auto-reload detection
+let lastClientHash = null;
+async function checkForClientUpdates() {
+  try {
+    const response = await fetch("/client/client.js");
+    const content = await response.text();
+    const hash = simpleHash(content);
+
+    if (lastClientHash === null) {
+      lastClientHash = hash;
+    } else if (lastClientHash !== hash) {
+      addLog("🔄 Client code updated - reloading page in 2 seconds...", "info");
+      setTimeout(() => window.location.reload(), 2000);
+    }
+  } catch (error) {
+    // Ignore errors (server might be restarting)
+  }
+}
+
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return hash;
+}
+
+// Check for updates every 5 seconds
+setInterval(checkForClientUpdates, 5000);
 
 // Connect on load
 connect();
