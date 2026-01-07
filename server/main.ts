@@ -1,7 +1,8 @@
 import { ClientMessage, ServerMessage } from "./protocol.ts";
-import { callAgent } from "./agent.ts";
 import { executeAction } from "./tools.ts";
 import { load } from "jsr:@std/dotenv@^0.225.0";
+import { executeTaskAgentically } from "./executor.ts";
+import { SessionLogger } from "./session.ts";
 
 // Load .env file
 await load({ export: true });
@@ -33,8 +34,8 @@ async function serveFile(path: string): Promise<Response> {
 function handleWebSocket(socket: WebSocket) {
   console.log("Client connected");
 
-  // Session history - persists for this WebSocket connection
-  const conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = [];
+  // Create session logger for this connection
+  const sessionLogger = new SessionLogger();
 
   function send(msg: ServerMessage) {
     socket.send(JSON.stringify(msg));
@@ -45,67 +46,41 @@ function handleWebSocket(socket: WebSocket) {
       const message: ClientMessage = JSON.parse(event.data);
 
       if (message.type === "task") {
-        send({ type: "log", content: "Processing task...", level: "info" });
+        const startTime = Date.now();
+        send({ type: "log", content: "Starting agentic task execution...", "level": "info" });
 
-        // Call agent with conversation history
-        const response = await callAgent(message.content, conversationHistory);
+        // Execute task agentically with retries
+        const result = await executeTaskAgentically(
+          message.content,
+          (msg, level) => send({ type: "log", content: msg, level }),
+        );
 
-        send({
-          type: "log",
-          content: `Plan: ${response.thought_summary}`,
-          level: "info",
-        });
+        // Log to session
+        await sessionLogger.logTask(
+          message.content,
+          result.finalResponse,
+          result.success,
+          startTime,
+          result.error,
+        );
 
-        // Execute actions
-        for (const action of response.actions) {
-          send({ type: "action", action });
-
-          const result = await executeAction(action);
-
+        if (result.success) {
           send({
-            type: "action_result",
-            success: result.success,
-            data: result.data,
-            error: result.error,
+            type: "task_complete",
+            summary: result.finalResponse?.final || "Task completed",
           });
-
-          if (!result.success) {
-            send({
-              type: "log",
-              content: `Action failed: ${result.error}`,
-              level: "error",
-            });
-            return;
-          }
-
-          if (result.data) {
-            send({
-              type: "log",
-              content: String(result.data),
-              level: "info",
-            });
-          }
+          send({
+            type: "log",
+            content: `Session logged to ${sessionLogger.getSessionFile()}`,
+            level: "info",
+          });
+        } else {
+          send({
+            type: "log",
+            content: `Task failed: ${result.error}`,
+            level: "error",
+          });
         }
-
-        // Store in conversation history
-        conversationHistory.push({
-          role: "user",
-          content: message.content,
-        });
-        conversationHistory.push({
-          role: "assistant",
-          content: JSON.stringify(response),
-        });
-
-        send({
-          type: "task_complete",
-          summary: response.final,
-        });
-        send({
-          type: "log",
-          content: `✓ ${response.final}`,
-          level: "success",
-        });
       } else if (message.type === "git.status") {
         const result = await executeAction({ type: "git.status" });
         send({
