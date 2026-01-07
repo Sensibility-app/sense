@@ -4,84 +4,53 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Sense** is an agent-first self-hosting development environment. The core principle: build a closed loop where all development happens by commanding a local server through a browser UI, with Claude acting as the execution agent.
+**Sense** is a browser-based IDE that integrates Claude's native tool use capabilities. Instead of building a custom agent system, Sense provides an MCP-style tool server that Claude uses to interact with the filesystem and execute commands.
 
-The system is designed to **write and evolve itself** through structured agent interactions.
+## Architecture: MCP Tool Server + Claude
 
-## Architecture Philosophy
-
-### Core Loop (Agentic)
-1. Browser UI sends task/command
-2. Server builds project context (file tree, git status, README)
-3. Agent receives context + task, replies with **structured actions** (JSON only)
-4. Server executes actions (file system, commands, git)
-5. **If actions fail**: Error feedback sent back to agent, loop repeats (max 5 iterations)
-6. Results stream back to browser
-7. Session logged to `.sense/sessions/`
-8. System extends itself through this loop
-
-### Critical Constraint: Structured Output Only
-
-Agent responses MUST be strict JSON with this schema:
-
-```json
-{
-  "thought_summary": "Brief description",
-  "actions": [
-    {
-      "type": "fs.writeFile",
-      "path": "relative/path/file.ts",
-      "content": "file contents"
-    },
-    {
-      "type": "proc.exec",
-      "cmd": "command to run"
-    }
-  ],
-  "final": "Summary of what was done"
-}
+```
+Browser UI ←→ WebSocket Server ←→ Claude API (with tools)
+                    ↓
+              MCP-style Tools
+                    ↓
+              Your Filesystem
 ```
 
-**Rules:**
-- No free-form instructions
-- No hidden changes
-- Every file change must be explicit in actions array
-- Small batches of actions only
-- All changes must be diff-visible
+### How It Works
+
+1. User sends task through browser
+2. Server calls Claude API with MCP-style tools exposed
+3. Claude decides which tools to use and calls them
+4. Server executes tools and returns results
+5. Claude continues iterating (up to 25 times) until task is complete
+6. All tool calls and results stream to browser in real-time
+
+**Key Insight**: We don't build an agent - we provide tools and let Claude be the agent!
+
+## Available Tools
+
+Claude has access to these MCP-style tools:
+
+- **read_file** - Read file contents
+- **write_file** - Write/create files (auto-creates directories)
+- **list_directory** - List directory contents
+- **execute_command** - Run shell commands (git, deno, tests, etc.)
+- **search_files** - Search for patterns with grep
 
 ## Repository Structure
 
 ```
-/server         - Core server (Deno + WebSocket)
-  main.ts       - HTTP + WebSocket server
-  agent.ts      - Claude API integration
-  executor.ts   - Agentic task execution with retry loop
-  context.ts    - Auto-context builder (file tree, git, README)
-  session.ts    - Session logging
-  tools.ts      - Action execution (fs, proc, git)
-  protocol.ts   - Type definitions and validation
-/client         - Browser UI (thin renderer)
-  index.html    - UI layout and styles
-  client.ts/js  - WebSocket client
-/.sense         - Runtime state
-  sessions/     - Persistent session logs (JSON)
+/server
+  main.ts        - HTTP + WebSocket server
+  claude.ts      - Claude tool use integration
+  tools-mcp.ts   - MCP-style tool definitions
+  session.ts     - Session logging
+/client
+  index.html     - UI layout and styles
+  client.js      - WebSocket client
+/.sense
+  sessions/      - Session logs (JSON)
 ```
-
-## Tool Set (v0)
-
-### File System
-- `fs.readFile` - Read file contents
-- `fs.writeFile` - Create or overwrite file
-- `fs.listDir` - List directory contents
-- `fs.move` - Move/rename files
-- `fs.delete` - Delete files
-
-### Process
-- `proc.exec` - Execute command with streaming output
-
-### Git
-- `git.status` - Show working tree status
-- `git.diff` - Show changes
 
 ## Development Commands
 
@@ -91,70 +60,36 @@ deno task dev
 
 # Start server (production)
 deno task start
-
-# Run tests
-deno task test
 ```
 
-The server requires `ANTHROPIC_API_KEY` in environment or `.env` file.
+Requires `ANTHROPIC_API_KEY` in environment or `.env` file.
 
-## Key Development Principles
+## Key Principles
 
-1. **No Manual Edits**: Once self-hosting is achieved, all changes happen through the browser UI commanding the agent
-2. **Auto Context**: Agent automatically receives project file tree, git status, and README
-3. **Iterative Execution**: Agent retries up to 5 times if actions fail, learning from errors
-4. **Small Steps**: Changes should be small and verifiable
-5. **Diff Visibility**: All changes must be reviewable as diffs (use Git Diff button)
-6. **Structured Only**: No free-form agent responses - structured actions only
-7. **Session Logging**: All tasks logged to `.sense/sessions/` for audit trail
+1. **Tool-First Design**: Expose capabilities as tools, let Claude figure out how to use them
+2. **Claude Handles Agentic Loop**: Claude decides when to continue or stop
+3. **Streaming Everything**: Tool calls and results stream to UI in real-time
+4. **No Custom Protocols**: Use Anthropic's standard tool use format
+5. **Session Logging**: All tasks logged to `.sense/sessions/`
 
-## Current Status: Agentic v0.2
+## This is a Deno Project
 
-The system now has:
-- ✅ Agentic execution with retry loop (up to 5 iterations)
-- ✅ Automatic project context injection
-- ✅ Session logging to `.sense/sessions/`
-- ✅ Error recovery and self-correction
-- ✅ Git integration for tracking changes
+**IMPORTANT**: Use Deno APIs (Deno.readTextFile, Deno.writeTextFile, etc.), NOT Node.js APIs (fs, path).
 
-**Self-Hosting Criteria** (ready to test):
-- Agent can add a server endpoint
-- Agent can modify the UI
-- Agent can run tests/build
-- Agent knows it's a Deno project
-- No external code editing needed
+## Development Philosophy
 
-The system is now ready for **true dogfooding** - command it to improve itself!
+Sense is designed to be **self-hosting**: Claude can modify Sense's own code through the tool interface. The system should be able to:
+- Read its own source files
+- Modify server and client code
+- Run tests and checks
+- Evolve its own capabilities
 
-## Postponed Features (Do Not Implement Yet)
+## Current Status
 
-- Plugin system
-- Multi-pane window manager
-- Permissions & sandboxing
-- MessagePack / performance optimizations
-- Fancy editor widgets
+✅ MCP-style tool server
+✅ Claude native tool use integration
+✅ Streaming tool execution
+✅ Session logging
+✅ Browser-based IDE interface
 
-These will be added later **through the agent system itself** once the core loop is working.
-
-## Task-Based Development (Phase 3+)
-
-Tasks include:
-- Title
-- Acceptance criteria
-- Status (open/running/done/failed)
-- Artifacts (diffs, logs)
-
-Agent workflow for tasks:
-1. Restate acceptance criteria
-2. Propose plan
-3. Execute incrementally
-4. Validate via tests/build
-5. Mark done
-
-## Success Definition
-
-The system is successful when you can type in the browser:
-
-> "Add a new endpoint and update the UI to show its status"
-
-And the system edits its own code, runs checks, shows diffs, and continues evolving itself.
+Ready for **true self-hosting**: command Claude to improve the IDE itself!

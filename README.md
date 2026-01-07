@@ -1,6 +1,6 @@
 # Sense
 
-Agent-first self-hosting development environment.
+A browser-based IDE that integrates Claude's native tool use capabilities for self-hosting development.
 
 ## Quick Start
 
@@ -12,72 +12,80 @@ Agent-first self-hosting development environment.
 
 2. **Run the server**:
    ```bash
-   export ANTHROPIC_API_KEY=your_key_here
    deno task dev
    ```
 
 3. **Open your browser**:
    - Navigate to http://localhost:8080
-   - Enter tasks in the input box
-   - The agent will execute structured actions to fulfill your requests
-
-## Development Commands
-
-```bash
-# Start server with auto-reload
-deno task dev
-
-# Start server (production)
-deno task start
-
-# Run tests
-deno task test
-```
+   - Enter tasks like "add a clear button to the UI"
+   - Watch Claude use tools to complete the task autonomously
 
 ## How It Works
 
-1. You enter a task in the browser UI
-2. Server sends the task to Claude
-3. Claude responds with structured JSON actions
-4. Server validates and executes each action
-5. Results stream back to the browser
-6. The system can modify itself through this loop
+Sense doesn't build a custom agent - it provides **MCP-style tools** that Claude uses through its native tool use API:
 
-## Agent Action Protocol
-
-The agent responds with JSON only:
-
-```json
-{
-  "thought_summary": "What I'm going to do",
-  "actions": [
-    {"type": "fs.writeFile", "path": "file.ts", "content": "..."},
-    {"type": "proc.exec", "cmd": "deno test -A"}
-  ],
-  "final": "What was accomplished"
-}
+```
+Browser ←→ Server ←→ Claude (with tools) ←→ Your Filesystem
 ```
 
-Available actions:
-- `fs.readFile`, `fs.writeFile`, `fs.listDir`, `fs.move`, `fs.delete`
-- `proc.exec` - run shell commands
-- `git.status`, `git.diff` - git operations
+**Available Tools:**
+- `read_file` - Read any file
+- `write_file` - Create/modify files
+- `list_directory` - Browse directories
+- `execute_command` - Run shell commands
+- `search_files` - Search with grep
 
-## Architecture
+Claude decides which tools to use, when to use them, and iterates up to 25 times until the task is complete.
 
-- `/server` - Deno server with WebSocket support
-  - `main.ts` - HTTP + WebSocket server
-  - `agent.ts` - Claude API integration
-  - `tools.ts` - Action execution (file system, process, git)
-  - `protocol.ts` - Type definitions and validation
-- `/client` - Browser UI
-  - `index.html` - UI layout
-  - `client.ts` - WebSocket client and interaction
-- `/.sense` - Runtime state and session logs
+## Example Tasks
+
+```
+Add a dark mode toggle to the UI
+
+Create a health check endpoint at /health that returns JSON with uptime
+
+Add input validation to prevent empty tasks
+
+Search for TODOs in the codebase and create a todo.md file
+```
+
+## Architecture Benefits
+
+✅ **Simple**: Let Claude handle the agentic loop
+✅ **Powerful**: Full filesystem and command access
+✅ **Transparent**: See every tool call in real-time
+✅ **Self-Hosting**: Claude can modify Sense's own code
+✅ **Standard**: Uses Anthropic's tool use format (MCP-compatible)
+
+## Development
+
+```bash
+# Start with auto-reload
+deno task dev
+
+# Run tests (when available)
+deno task test
+```
+
+## Project Structure
+
+- `/server` - Deno WebSocket server with Claude integration
+- `/client` - Browser UI (HTML/CSS/JS)
+- `/.sense/sessions` - Task execution logs
 
 ## Self-Hosting
 
-Once the system is running, all further development should happen through the browser UI. The agent can modify its own code, run tests, and evolve the system.
+Once running, you can command Claude to improve Sense itself:
+
+```
+Read server/claude.ts and suggest improvements to the tool execution loop
+
+Add a new tool called 'git_commit' that stages and commits changes
+
+Update the UI to show a progress indicator during task execution
+```
+
+The system can evolve itself through the same interface you use to build other projects.
 
 ## License
 
