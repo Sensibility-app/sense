@@ -1,0 +1,4 @@
+.sense/
+.env
+*.log
+node_modules/

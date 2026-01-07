@@ -1,0 +1,13 @@
+{
+  "tasks": {
+    "dev": "deno run --allow-all --watch server/main.ts",
+    "start": "deno run --allow-all server/main.ts",
+    "test": "deno test --allow-all"
+  },
+  "imports": {
+    "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@^0.32.0"
+  },
+  "compilerOptions": {
+    "lib": ["deno.window", "dom"]
+  }
+}
