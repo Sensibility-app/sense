@@ -13,12 +13,22 @@ export interface SessionData {
   created: string;
   lastActive: string;
   messages: ConversationMessage[];
+  currentTask?: {
+    task: string;
+    startedAt: string;
+    status: "running" | "completed" | "failed";
+  };
 }
 
 export class PersistentSession {
   private sessionId: string;
   private sessionPath: string;
   private messages: ConversationMessage[] = [];
+  private currentTask?: {
+    task: string;
+    startedAt: string;
+    status: "running" | "completed" | "failed";
+  };
 
   constructor(sessionId?: string) {
     this.sessionId = sessionId || this.generateSessionId();
@@ -37,8 +47,12 @@ export class PersistentSession {
         const data = await Deno.readTextFile(this.sessionPath);
         const sessionData: SessionData = JSON.parse(data);
         this.messages = sessionData.messages;
+        this.currentTask = sessionData.currentTask;
         await this.updateLastActive();
         console.log(`Loaded session ${this.sessionId} with ${this.messages.length} messages`);
+        if (this.currentTask?.status === "running") {
+          console.log(`⚠️  Session has interrupted task: "${this.currentTask.task}"`);
+        }
         return true;
       }
 
@@ -59,6 +73,7 @@ export class PersistentSession {
         created: this.messages.length === 0 ? new Date().toISOString() : (await this.getCreatedTime()),
         lastActive: new Date().toISOString(),
         messages: this.messages,
+        ...(this.currentTask && { currentTask: this.currentTask }),
       };
 
       await Deno.mkdir(SESSIONS_DIR, { recursive: true });
@@ -126,6 +141,42 @@ export class PersistentSession {
     } catch (error) {
       console.error(`Failed to delete session ${this.sessionId}:`, error);
     }
+  }
+
+  // Task state management
+  startTask(task: string): void {
+    this.currentTask = {
+      task,
+      startedAt: new Date().toISOString(),
+      status: "running",
+    };
+    this.save().catch(console.error);
+  }
+
+  completeTask(): void {
+    if (this.currentTask) {
+      this.currentTask.status = "completed";
+      this.save().catch(console.error);
+    }
+  }
+
+  failTask(): void {
+    if (this.currentTask) {
+      this.currentTask.status = "failed";
+      this.save().catch(console.error);
+    }
+  }
+
+  getInterruptedTask(): string | null {
+    if (this.currentTask?.status === "running") {
+      return this.currentTask.task;
+    }
+    return null;
+  }
+
+  clearCurrentTask(): void {
+    this.currentTask = undefined;
+    this.save().catch(console.error);
   }
 }
 

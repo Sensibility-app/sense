@@ -14,7 +14,7 @@ type ClientMessage =
   | { type: "git.diff" };
 
 type ServerMessage =
-  | { type: "session_id"; sessionId: string; messageCount: number }
+  | { type: "session_id"; sessionId: string; messageCount: number; interruptedTask?: string }
   | { type: "log"; content: string; level: "info" | "error" | "success" | "tool" }
   | { type: "thinking"; content: string }
   | { type: "tool_use"; toolName: string; input: unknown }
@@ -64,17 +64,34 @@ function handleWebSocket(socket: WebSocket) {
       if (message.type === "resume_session") {
         persistentSession = new PersistentSession(message.sessionId);
         const loaded = await persistentSession.load();
+        const interruptedTask = persistentSession.getInterruptedTask();
+
         send({
           type: "session_id",
           sessionId: persistentSession.getSessionId(),
           messageCount: persistentSession.getMessageCount(),
+          ...(interruptedTask && { interruptedTask }),
         });
+
         if (loaded) {
           send({
             type: "log",
             content: `📂 Resumed session with ${persistentSession.getMessageCount()} messages`,
             level: "info",
           });
+
+          if (interruptedTask) {
+            send({
+              type: "log",
+              content: `⚠️  Found interrupted task: "${interruptedTask}"`,
+              level: "info",
+            });
+            send({
+              type: "log",
+              content: `💡 You can retry it or start a new task`,
+              level: "info",
+            });
+          }
         }
         return;
       }
@@ -99,10 +116,13 @@ function handleWebSocket(socket: WebSocket) {
       if (!persistentSession) {
         persistentSession = new PersistentSession();
         await persistentSession.load();
+        const interruptedTask = persistentSession.getInterruptedTask();
+
         send({
           type: "session_id",
           sessionId: persistentSession.getSessionId(),
           messageCount: persistentSession.getMessageCount(),
+          ...(interruptedTask && { interruptedTask }),
         });
       }
 
@@ -111,6 +131,9 @@ function handleWebSocket(socket: WebSocket) {
         send({ type: "log", content: "🤖 Claude is working on your task...", level: "info" });
 
         try {
+          // Mark task as started
+          persistentSession.startTask(message.content);
+
           // Add user message to persistent session
           persistentSession.addMessage({
             role: "user",
@@ -151,6 +174,9 @@ function handleWebSocket(socket: WebSocket) {
             }
           }
 
+          // Mark task as complete
+          persistentSession.completeTask();
+
           // Log to session
           await sessionLogger.logTask(
             message.content,
@@ -170,6 +196,10 @@ function handleWebSocket(socket: WebSocket) {
           });
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
+
+          // Mark task as failed
+          persistentSession.failTask();
+
           send({
             type: "log",
             content: `Error: ${errorMsg}`,

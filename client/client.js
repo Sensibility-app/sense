@@ -9,6 +9,7 @@ const newSessionBtn = document.getElementById("newSessionBtn");
 let ws;
 let isProcessing = false;
 let currentSessionId = null;
+let interruptedTask = null;
 
 // Session management
 function saveSessionId(sessionId) {
@@ -23,6 +24,46 @@ function loadSessionId() {
 function clearSessionId() {
   localStorage.removeItem("sense_session_id");
   currentSessionId = null;
+}
+
+function showRetryPrompt(task) {
+  const retryDiv = document.createElement("div");
+  retryDiv.className = "log-entry";
+  retryDiv.style.cssText = "background: #3e3e42; padding: 12px; margin: 8px 0; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;";
+
+  const textSpan = document.createElement("span");
+  textSpan.textContent = `⚠️  Previous task was interrupted: "${task}"`;
+  retryDiv.appendChild(textSpan);
+
+  const buttonContainer = document.createElement("div");
+  buttonContainer.style.cssText = "display: flex; gap: 8px;";
+
+  const retryBtn = document.createElement("button");
+  retryBtn.textContent = "Retry";
+  retryBtn.style.cssText = "padding: 4px 12px; font-size: 12px;";
+  retryBtn.onclick = () => {
+    taskInput.value = task;
+    retryDiv.remove();
+    interruptedTask = null;
+    addLog("Retrying interrupted task...", "info");
+    submitBtn.click();
+  };
+
+  const dismissBtn = document.createElement("button");
+  dismissBtn.textContent = "Dismiss";
+  dismissBtn.className = "secondary";
+  dismissBtn.style.cssText = "padding: 4px 12px; font-size: 12px;";
+  dismissBtn.onclick = () => {
+    retryDiv.remove();
+    interruptedTask = null;
+  };
+
+  buttonContainer.appendChild(retryBtn);
+  buttonContainer.appendChild(dismissBtn);
+  retryDiv.appendChild(buttonContainer);
+
+  output.appendChild(retryDiv);
+  output.scrollTop = output.scrollHeight;
 }
 
 function addLog(content, level = "info") {
@@ -100,6 +141,12 @@ function connect() {
       case "session_id":
         saveSessionId(message.sessionId);
         console.log(`Session ID: ${message.sessionId}, Messages: ${message.messageCount}`);
+
+        // Handle interrupted task
+        if (message.interruptedTask) {
+          interruptedTask = message.interruptedTask;
+          showRetryPrompt(message.interruptedTask);
+        }
         break;
 
       case "log":
