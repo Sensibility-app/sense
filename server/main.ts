@@ -1,11 +1,21 @@
-import { ClientMessage, ServerMessage } from "./protocol.ts";
-import { executeAction } from "./tools.ts";
 import { load } from "jsr:@std/dotenv@^0.225.0";
-import { executeTaskAgentically } from "./executor.ts";
+import { executeTaskWithClaude } from "./claude.ts";
 import { SessionLogger } from "./session.ts";
 
 // Load .env file
 await load({ export: true });
+
+type ClientMessage =
+  | { type: "task"; content: string }
+  | { type: "git.status" }
+  | { type: "git.diff" };
+
+type ServerMessage =
+  | { type: "log"; content: string; level: "info" | "error" | "success" | "tool" }
+  | { type: "thinking"; content: string }
+  | { type: "tool_use"; toolName: string; input: unknown }
+  | { type: "tool_result"; content: string; isError: boolean }
+  | { type: "task_complete"; summary: string };
 
 const PORT = 8080;
 
@@ -47,52 +57,75 @@ function handleWebSocket(socket: WebSocket) {
 
       if (message.type === "task") {
         const startTime = Date.now();
-        send({ type: "log", content: "Starting agentic task execution...", "level": "info" });
+        send({ type: "log", content: "🤖 Claude is working on your task...", level: "info" });
 
-        // Execute task agentically with retries
-        const result = await executeTaskAgentically(
-          message.content,
-          (msg, level) => send({ type: "log", content: msg, level }),
-        );
+        try {
+          // Execute task with Claude using tool use
+          let taskComplete = false;
+          for await (const chunk of executeTaskWithClaude(message.content)) {
+            if (chunk.type === "text") {
+              send({ type: "log", content: chunk.content, level: "info" });
+            } else if (chunk.type === "tool_use") {
+              send({
+                type: "tool_use",
+                toolName: chunk.toolName!,
+                input: chunk.toolInput,
+              });
+              send({
+                type: "log",
+                content: `🔧 ${chunk.content}`,
+                level: "tool",
+              });
+            } else if (chunk.type === "tool_result") {
+              send({
+                type: "tool_result",
+                content: chunk.content,
+                isError: chunk.isError || false,
+              });
+              const resultPreview = chunk.content.slice(0, 200) + (chunk.content.length > 200 ? "..." : "");
+              send({
+                type: "log",
+                content: chunk.isError ? `❌ ${resultPreview}` : `✓ ${resultPreview}`,
+                level: chunk.isError ? "error" : "success",
+              });
+            } else if (chunk.type === "complete") {
+              taskComplete = true;
+            }
+          }
 
-        // Log to session
-        await sessionLogger.logTask(
-          message.content,
-          result.finalResponse,
-          result.success,
-          startTime,
-          result.error,
-        );
+          // Log to session
+          await sessionLogger.logTask(
+            message.content,
+            { completed: taskComplete },
+            taskComplete,
+            startTime,
+          );
 
-        if (result.success) {
           send({
             type: "task_complete",
-            summary: result.finalResponse?.final || "Task completed",
+            summary: "Task completed successfully",
           });
           send({
             type: "log",
-            content: `Session logged to ${sessionLogger.getSessionFile()}`,
+            content: `📝 Session logged to ${sessionLogger.getSessionFile().split("/").pop()}`,
             level: "info",
           });
-        } else {
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
           send({
             type: "log",
-            content: `Task failed: ${result.error}`,
+            content: `Error: ${errorMsg}`,
             level: "error",
           });
+
+          await sessionLogger.logTask(
+            message.content,
+            null,
+            false,
+            startTime,
+            errorMsg,
+          );
         }
-      } else if (message.type === "git.status") {
-        const result = await executeAction({ type: "git.status" });
-        send({
-          type: "status",
-          content: result.success ? String(result.data) : result.error || "",
-        });
-      } else if (message.type === "git.diff") {
-        const result = await executeAction({ type: "git.diff" });
-        send({
-          type: "diff",
-          content: result.success ? String(result.data) : result.error || "",
-        });
       }
     } catch (error) {
       send({

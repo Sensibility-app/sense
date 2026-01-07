@@ -76,33 +76,19 @@ function connect() {
         addLog(message.content, message.level);
         break;
 
-      case "action":
-        const action = message.action;
-        addLog(`→ ${action.type}`, "action");
+      case "tool_use":
+        addLog(`🔧 ${message.toolName}`, "tool");
         break;
 
-      case "action_result":
-        if (!message.success && message.error) {
-          addLog(`✗ ${message.error}`, "error");
+      case "tool_result":
+        if (message.isError) {
+          addLog(`❌ Tool error: ${message.content.slice(0, 200)}`, "error");
         }
+        // Success results are shown via "log" messages
         break;
 
-      case "diff":
-        if (message.content) {
-          showDiff(message.content);
-        } else {
-          addLog("No changes", "info");
-        }
-        setProcessing(false);
-        break;
-
-      case "status":
-        if (message.content) {
-          addLog(message.content, "info");
-        } else {
-          addLog("Working tree clean", "info");
-        }
-        setProcessing(false);
+      case "thinking":
+        addLog(`💭 ${message.content}`, "info");
         break;
 
       case "task_complete":
