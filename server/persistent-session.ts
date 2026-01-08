@@ -6,7 +6,7 @@ const SENSE_DIR = join(Deno.cwd(), ".sense");
 const CURRENT_SESSION_PATH = join(SENSE_DIR, "current-session.json");
 
 export interface ConversationMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: unknown;
 }
 

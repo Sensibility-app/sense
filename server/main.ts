@@ -215,38 +215,43 @@ function handleWebSocket(socket: WebSocket) {
       // connectedClients.size includes this current connection, so check for <= 1 for first client
       if (isLikelyServerRestart && connectedClients.size <= 1) {
         // Server restart - show single consolidated message
-        if (wasTaskInterruptedByRestart) {
-           // Task was interrupted by server restart
+          if (wasTaskInterruptedByRestart) {
+             // Task was interrupted by server restart - store and send system message
+             globalSession.addMessage({
+               role: "system",
+               content: "Server restarted during task"
+             });
+             
+             sendToClient({
+               type: "system",
+               content: `Type "continue" to resume interrupted task`,
+               level: "info",
+             });
+         } else {
+           // Server restart without interrupted task
            globalSession.addMessage({
-             role: "assistant",
-             content: `Server restarted during task. Type "continue" to resume: "${interruptedTask}"`
+             role: "system",
+             content: "Server restarted"
            });
            
            sendToClient({
              type: "system",
-             content: `Type "continue" to resume interrupted task`,
+             content: "Server restarted",
              level: "info",
            });
-           // No additional system message needed - info provided through session_info
-        } else {
-          // Server restart without interrupted task
-          globalSession.addMessage({
-            role: "assistant",
-            content: "Server restarted"
-          });
-          
-          sendToClient({
-            type: "system",
-            content: "Server restarted",
-            level: "info",
-          });
-        }
-      } else {
-        // Client reconnection (not server restart)
-        globalSession.addMessage({
-          role: "assistant", 
-          content: "Client reconnected"
-        });
+         }
+       } else {
+         // Client reconnection (not server restart)
+         globalSession.addMessage({
+           role: "system", 
+           content: "Client reconnected"
+         });
+         
+         sendToClient({
+           type: "system",
+           content: "Client reconnected", 
+           level: "info",
+         });
         
         sendToClient({
           type: "system",
