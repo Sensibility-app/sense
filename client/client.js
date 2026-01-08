@@ -107,9 +107,14 @@ function handleMessage(message) {
 // Handle session info (includes history)
 function handleSessionInfo(message) {
   // Update token info if available
-  if (message.contextSize && message.contextSize.estimatedTokens > 0) {
-    tokenInfo.textContent = `~${message.contextSize.estimatedTokens.toLocaleString()} tokens`;
-    tokenInfo.style.display = "block";
+  if (message.contextSize) {
+    if (message.contextSize.estimatedTokens > 0) {
+      tokenInfo.textContent = `~${message.contextSize.estimatedTokens.toLocaleString()} tokens`;
+      tokenInfo.style.display = "block";
+    } else {
+      // Hide token display when tokens are 0 (session cleared)
+      tokenInfo.style.display = "none";
+    }
   }
 
   // Clear output and display history
@@ -128,15 +133,9 @@ function handleSessionInfo(message) {
         addThinkingBlock(entry.content);
       }
     });
-  } else {
-    // Empty session
-    addSystemMessage("Connected to server, ready for tasks.", "info");
   }
-
-  // Handle interrupted task
-  if (message.interruptedTask) {
-    showContinuePrompt(message.interruptedTask);
-  }
+  
+  // All system messages now come from server - client just displays them
 
   scrollToBottom();
   isFirstConnection = false;
@@ -408,45 +407,7 @@ function addToolFromHistory(entry) {
 }
 
 // Continue prompt for interrupted tasks
-function showContinuePrompt(task) {
-  const continueDiv = document.createElement("div");
-  continueDiv.className = "message system";
-  continueDiv.style.cssText = "padding: 12px; margin: 12px 0; border-radius: 8px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--accent-color); background: var(--bg-secondary);";
 
-  const icon = document.createElement("span");
-  icon.textContent = "⏸️";
-  icon.style.fontSize = "16px";
-
-  const textSpan = document.createElement("span");
-  textSpan.textContent = "Previous task was interrupted";
-  textSpan.style.flex = "1";
-  textSpan.style.fontSize = "14px";
-  textSpan.style.color = "var(--text-secondary)";
-
-  const continueBtn = document.createElement("button");
-  continueBtn.textContent = "Continue";
-  continueBtn.className = "primary-action";
-  continueBtn.onclick = () => {
-    taskInput.value = "continue";
-    continueDiv.remove();
-    submitBtn.click();
-  };
-
-  const dismissBtn = document.createElement("button");
-  dismissBtn.textContent = "×";
-  dismissBtn.style.cssText = "padding: 4px 8px; font-size: 14px; border-radius: 4px; background: transparent; color: var(--text-tertiary); border: none; cursor: pointer;";
-  dismissBtn.onclick = () => {
-    continueDiv.remove();
-  };
-
-  continueDiv.appendChild(icon);
-  continueDiv.appendChild(textSpan);
-  continueDiv.appendChild(continueBtn);
-  continueDiv.appendChild(dismissBtn);
-
-  output.appendChild(continueDiv);
-  scrollToBottom();
-}
 
 // Processing state
 function setProcessing(processing) {

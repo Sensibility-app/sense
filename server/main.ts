@@ -4,6 +4,7 @@ import { SessionLogger } from "./session.ts";
 import { PersistentSession, archiveCurrentSession } from "./persistent-session.ts";
 import { formatSessionHistory, getLastUserMessage, type DisplayMessage } from "./session-formatter.ts";
 import { log, error } from "./logger.ts";
+import { tokenTracker } from "./token-tracker.ts";
 
 // Load .env file
 await load({ export: true });
@@ -11,6 +12,9 @@ await load({ export: true });
 // Global session (shared across all clients)
 const globalSession = new PersistentSession();
 await globalSession.load();
+
+// Track server startup time for reconnection detection
+const serverStartTime = Date.now();
 
 // Track all connected clients for broadcasting
 const connectedClients = new Set<WebSocket>();
@@ -173,7 +177,7 @@ function handleWebSocket(socket: WebSocket) {
   }
 
   // Function to send initial session info
-  function sendSessionInfo(isReconnection = false) {
+  function sendSessionInfo() {
     const interruptedTask = globalSession.getInterruptedTask();
     const messages = globalSession.getMessages();
     const tokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
@@ -198,67 +202,73 @@ function handleWebSocket(socket: WebSocket) {
       ...(!hasActiveTask && interruptedTask && { interruptedTask }),
     });
 
-    // Send connection status message that gets stored in history
-    if (isReconnection && messages.length > 0) {
-      // This is a reconnection to an existing session - add to history
-      globalSession.addMessage({
-        role: "assistant",
-        content: "Server reconnected"
-      });
+    // Only send reconnection messages if we have an existing session
+    if (messages.length > 0) {
+      // Check if this connection is happening soon after server start (likely server restart)
+      const timeSinceServerStart = Date.now() - serverStartTime;
+      const isLikelyServerRestart = timeSinceServerStart < 10000; // Within 10 seconds of server start
       
-      broadcast({
-        type: "system",
-        content: "Server reconnected",
-        level: "info",
-      });
-    } else if (messages.length > 0) {
-      // Client refresh of existing session - add to history  
-      globalSession.addMessage({
-        role: "assistant", 
-        content: "Client reconnected"
-      });
-      
-      broadcast({
-        type: "system",
-        content: "Client reconnected", 
-        level: "info",
-      });
-    }
-
-    // Warn if context is getting large
-    const CONTEXT_WARNING_THRESHOLD = 80000; // Warn at 80K tokens
-    const CONTEXT_DANGER_THRESHOLD = 100000; // Urgent warning at 100K tokens
-
-    if (sizeInfo.estimatedTokens > CONTEXT_DANGER_THRESHOLD) {
-      sendToClient({
-        type: "system",
-        content: `🔴 Context size critical: ~${Math.round(sizeInfo.estimatedTokens / 1000)}K tokens. Responses may be truncated. Clear session recommended!`,
-        level: "error",
-      });
-    } else if (sizeInfo.estimatedTokens > CONTEXT_WARNING_THRESHOLD) {
-      sendToClient({
-        type: "system",
-        content: `⚠️  Context size growing: ~${Math.round(sizeInfo.estimatedTokens / 1000)}K tokens. Consider clearing session soon.`,
-        level: "info",
-      });
-    }
-
-    // Send connection status (header update)
-    sendToClient({
-      type: "connection_status",
-      status: "connected"
-    });
-
-    // Show server restart message if there was a task interrupted by restart
-    if (!hasActiveTask && interruptedTask) {
+      // Check if there was a task interrupted by server restart
       const task = globalSession.getCurrentTask();
-      if (task && task.interruptionReason === "server_restart") {
+      const wasTaskInterruptedByRestart = !hasActiveTask && interruptedTask && task && task.interruptionReason === "server_restart";
+      
+      // connectedClients.size includes this current connection, so check for <= 1 for first client
+      if (isLikelyServerRestart && connectedClients.size <= 1) {
+        // Server restart - show single consolidated message
+           // Task was interrupted by server restart
+           globalSession.addMessage({
+             role: "assistant",
+             content: `Server restarted during task. Type "continue" to resume: "${interruptedTask}"`
+           });
+           
+           sendToClient({
+             type: "system",
+             content: `Type "continue" to resume interrupted task`,
+             level: "info",
+           });
+           // No additional system message needed - info provided through session_info
+        } else {
+          // Server restart without interrupted task
+          globalSession.addMessage({
+            role: "assistant",
+            content: "Server restarted"
+          });
+          
+          sendToClient({
+            type: "system",
+            content: "Server restarted",
+            level: "info",
+          });
+        }
+      } else {
+        // Client reconnection (not server restart)
+        globalSession.addMessage({
+          role: "assistant", 
+          content: "Client reconnected"
+        });
+        
         sendToClient({
           type: "system",
-          content: "🔄 Server restarted during task execution",
+          content: "Client reconnected", 
           level: "info",
         });
+        
+        // If there's an interrupted task, provide continue instruction
+        if (!hasActiveTask && interruptedTask) {
+          sendToClient({
+            type: "system",
+            content: `Type "continue" to resume interrupted task`,
+            level: "info",
+          });
+        }
       }
+    } else {
+      // Empty session - send welcome message from server
+      sendToClient({
+        type: "system",
+        content: "Ready",
+        level: "info",
+      });
     }
   }
 
@@ -292,6 +302,7 @@ function handleWebSocket(socket: WebSocket) {
       if (message.type === "archive_session" || message.type === "clear_session") {
         await archiveCurrentSession();
         await globalSession.clear();
+        tokenTracker.reset(); // Reset the token tracker when session is cleared
 
         const tokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
         const sizeInfo = globalSession.getSessionSizeInfo();

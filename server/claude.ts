@@ -95,7 +95,7 @@ export async function* executeTaskWithClaude(
     if (shouldStop && shouldStop()) {
       yield {
         type: "text_delta",
-        content: `\n\n⚠️ Task stopped by user.\n`,
+        content: `\n\nTask stopped by user.\n`,
       } as MessageChunk;
 
       const stopChunk: MessageChunk = {
@@ -271,7 +271,7 @@ export async function* executeTaskWithClaude(
             // Detected a loop - ask Claude to explain
             yield {
               type: "text_delta",
-              content: `\n\n⚠️ Detected repeated tool call loop: ${assistantContent[assistantContent.length - 1].type === 'tool_use' ? (assistantContent[assistantContent.length - 1] as any).name : 'unknown'} called ${callCount} times with same arguments.\n\n`,
+              content: `\n\nDetected repeated tool call loop: ${assistantContent[assistantContent.length - 1].type === 'tool_use' ? (assistantContent[assistantContent.length - 1] as any).name : 'unknown'} called ${callCount} times with same arguments.\n\n`,
             } as MessageChunk;
 
             // Ask Claude to explain what happened
@@ -381,7 +381,7 @@ Please keep your explanation concise (2-3 sentences).`,
 
       yield {
         type: "text_delta",
-        content: `\n\n⚠️ Stopped after ${MAX_ITERATIONS} iterations to prevent infinite loop.\n\n`,
+        content: `\n\nStopped after ${MAX_ITERATIONS} iterations to prevent infinite loop.\n\n`,
       } as MessageChunk;
 
       // Ask Claude to explain what it was trying to do
