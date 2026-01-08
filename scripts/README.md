@@ -1,5 +1,40 @@
 # Sense Development Scripts
 
+## dev-with-validation.ts - Safe Development Server
+
+A development server wrapper that validates TypeScript syntax before restarting. Prevents breaking the running server with syntax errors.
+
+### Usage
+
+```bash
+deno task dev
+```
+
+This is now the default development mode. The script:
+1. Watches `./server` and `./client` directories for changes
+2. Validates TypeScript syntax with `deno check` before restarting
+3. **Keeps the current working server running** if validation fails
+4. Shows clear error messages so you can fix syntax issues
+5. Auto-restarts once files are valid
+
+### Features
+
+- **Syntax Validation**: Won't restart with TypeScript errors
+- **Safety Net**: Current server stays alive during failed reloads
+- **Debouncing**: Waits 100ms for multiple rapid changes
+- **Editor Compatibility**: Ignores temp files (.swp, .tmp, etc.)
+- **Clear Feedback**: Shows validation status and errors
+
+### Commands
+
+- `deno task dev` - Safe development mode (recommended)
+- `deno task dev:unsafe` - Direct `--watch` mode (no validation)
+- `deno task start` - Production mode (no watching)
+
+### Why This Exists
+
+During development, Claude (or you) might save files with syntax errors. Without validation, `--watch` immediately kills the server, leaving you with no running instance. This script prevents that by validating first.
+
 ## ws-test.ts - WebSocket Test Client
 
 A command-line tool for testing Sense server functionality via WebSocket.
