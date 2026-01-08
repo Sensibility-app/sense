@@ -215,6 +215,7 @@ function handleWebSocket(socket: WebSocket) {
       // connectedClients.size includes this current connection, so check for <= 1 for first client
       if (isLikelyServerRestart && connectedClients.size <= 1) {
         // Server restart - show single consolidated message
+        if (wasTaskInterruptedByRestart) {
            // Task was interrupted by server restart
            globalSession.addMessage({
              role: "assistant",
