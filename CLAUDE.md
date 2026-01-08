@@ -32,10 +32,16 @@ Browser UI ←→ WebSocket Server ←→ Claude API (with tools)
 Claude has access to these MCP-style tools:
 
 - **read_file** - Read file contents
-- **write_file** - Write/create files (auto-creates directories)
+- **create_file** - Create new files (auto-creates directories)
+- **edit_file** - Edit files by exact string replacement
+- **read_file_range** - Read specific line ranges
+- **edit_file_range** - Replace line ranges (RECOMMENDED for multi-line edits)
 - **list_directory** - List directory contents
 - **execute_command** - Run shell commands (git, deno, tests, etc.)
 - **search_files** - Search for patterns with grep
+- **reload_server** - Trigger server reload
+
+**📖 See [TOOLS.md](TOOLS.md) for complete tool reference with examples and best practices.**
 
 ## Repository Structure
 
@@ -91,5 +97,15 @@ Sense is designed to be **self-hosting**: Claude can modify Sense's own code thr
 ✅ Streaming tool execution
 ✅ Session logging
 ✅ Browser-based IDE interface
+✅ Comprehensive documentation
 
 Ready for **true self-hosting**: command Claude to improve the IDE itself!
+
+## Documentation
+
+- **[TOOLS.md](TOOLS.md)** - Complete tool reference with examples, limitations, and best practices
+- **[README.md](README.md)** - User-facing quick start guide
+- **[MOBILE.md](MOBILE.md)** - PWA and mobile device setup
+- **[DOCUMENTATION-ANALYSIS.md](DOCUMENTATION-ANALYSIS.md)** - Analysis of documentation coverage and gaps
+- **[scripts/README.md](scripts/README.md)** - Development and testing scripts
+- **[agent-first-self-hosting-plan.md](agent-first-self-hosting-plan.md)** - Original design document (historical)

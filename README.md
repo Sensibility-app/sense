@@ -29,11 +29,14 @@ Browser ←→ Server ←→ Claude (with tools) ←→ Your Filesystem
 ```
 
 **Available Tools:**
-- `read_file` - Read any file
-- `write_file` - Create/modify files
+- `read_file` / `read_file_range` - Read files
+- `create_file` / `edit_file` / `edit_file_range` - Create/modify files
 - `list_directory` - Browse directories
 - `execute_command` - Run shell commands
 - `search_files` - Search with grep
+- `reload_server` - Restart server
+
+**📖 See [TOOLS.md](TOOLS.md) for complete reference**
 
 Claude decides which tools to use, when to use them, and iterates up to 25 times until the task is complete.
 
@@ -86,6 +89,13 @@ Update the UI to show a progress indicator during task execution
 ```
 
 The system can evolve itself through the same interface you use to build other projects.
+
+## Documentation
+
+- **[TOOLS.md](TOOLS.md)** - Complete tool reference with examples and best practices
+- **[CLAUDE.md](CLAUDE.md)** - Instructions for Claude Code when working with this repo
+- **[MOBILE.md](MOBILE.md)** - PWA setup for mobile devices
+- **[scripts/README.md](scripts/README.md)** - Development scripts documentation
 
 ## License
 

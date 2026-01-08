@@ -2,6 +2,8 @@ import { load } from "jsr:@std/dotenv@^0.225.0";
 import { executeTaskWithClaude } from "./claude.ts";
 import { SessionLogger } from "./session.ts";
 import { PersistentSession, archiveCurrentSession } from "./persistent-session.ts";
+import { formatSessionHistory, getLastUserMessage, type DisplayMessage } from "./session-formatter.ts";
+import { log, error } from "./logger.ts";
 
 // Load .env file
 await load({ export: true });
@@ -10,19 +12,113 @@ await load({ export: true });
 const globalSession = new PersistentSession();
 await globalSession.load();
 
+// Track all connected clients for broadcasting
+const connectedClients = new Set<WebSocket>();
+
+// Track active tasks to ensure completion even if client disconnects
+const activeTasks = new Map<string, {
+  taskId: string;
+  stopRequested: boolean;
+  startTime: number;
+  sessionLogger: any;
+  content: string;
+}>();
+
 type ClientMessage =
   | { type: "task"; content: string }
-  | { type: "archive_session" };
+  | { type: "stop_task" }
+  | { type: "archive_session" }
+  | { type: "clear_session" }
+  | { type: "git.status" }
+  | { type: "git.diff" };
 
 type ServerMessage =
-  | { type: "session_info"; messageCount: number; interruptedTask?: string; history: Array<{role: string; content: string; isTask?: boolean}> }
-  | { type: "log"; content: string; level: "info" | "error" | "success" | "tool" }
+  // State updates (header only)
+  | { type: "session_info"; messageCount: number; interruptedTask?: string; history: DisplayMessage[]; tokenUsage: { inputTokens: number; outputTokens: number; totalTokens: number }; contextSize?: { estimatedTokens: number; bytes: number } }
+  | { type: "connection_status"; status: "connected" | "disconnected"; message?: string }
+  | { type: "processing_status"; isProcessing: boolean; message?: string }
+  | { type: "token_usage"; usage: { inputTokens: number; outputTokens: number; totalTokens: number }; formatted: string }
+
+  // Conversation messages (chat display)
+  | { type: "user_message"; content: string }
+  | { type: "assistant_response"; content?: string; streaming?: boolean }
+  | { type: "text_delta"; content: string }
   | { type: "thinking"; content: string }
-  | { type: "tool_use"; toolName: string; input: unknown }
-  | { type: "tool_result"; content: string; isError: boolean }
+
+  // Tool use messages
+  | { type: "tool_use"; toolName: string; toolId: string; toolInput?: unknown }
+  | { type: "tool_result"; toolId: string; content: string; isError: boolean }
+
+  // System messages (small, minimal in chat)
+  | { type: "system"; content: string; level?: "info" | "error" | "success" }
+  | { type: "tool_activity"; toolName: string; status: "started" | "completed" | "error"; preview?: string; toolId?: string }
+  
+  // Task lifecycle
   | { type: "task_complete"; summary: string };
 
 const PORT = 8080;
+
+// Broadcast to all connected clients
+function broadcast(msg: ServerMessage) {
+  const payload = JSON.stringify(msg);
+  for (const client of connectedClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      try {
+        client.send(payload);
+      } catch (err) {
+        error("Failed to send to client:", err);
+      }
+    }
+  }
+}
+
+// Handle slash commands
+function handleSlashCommand(command: string): { handled: boolean; type?: string } {
+  const trimmedCommand = command.trim().toLowerCase();
+  
+  if (trimmedCommand === "/clear") {
+    return { handled: true, type: "clear_session" };
+  }
+  
+  return { handled: false };
+}
+
+// Complete task and clean up, regardless of client connection status
+async function completeTaskSafely(taskId: string, success: boolean, errorMsg?: string) {
+  const taskInfo = activeTasks.get(taskId);
+  if (!taskInfo) return;
+
+  try {
+    if (success) {
+      globalSession.completeTask();
+      
+      await taskInfo.sessionLogger.logTask(
+        taskInfo.content,
+        { completed: true },
+        true,
+        taskInfo.startTime,
+      );
+      
+      log(`Task completed successfully: ${taskInfo.content.slice(0, 50)}...`);
+    } else {
+      globalSession.failTask();
+      
+      await taskInfo.sessionLogger.logTask(
+        taskInfo.content,
+        null,
+        false,
+        taskInfo.startTime,
+        errorMsg,
+      );
+      
+      log(`Task failed: ${taskInfo.content.slice(0, 50)}... Error: ${errorMsg}`);
+    }
+  } catch (err) {
+    error("Error completing task safely:", err);
+  } finally {
+    activeTasks.delete(taskId);
+  }
+}
 
 // Serve static files from client directory
 async function serveFile(path: string): Promise<Response> {
@@ -35,6 +131,16 @@ async function serveFile(path: string): Promise<Response> {
       ? "text/javascript"
       : ext === "css"
       ? "text/css"
+      : ext === "json"
+      ? "application/json"
+      : ext === "png"
+      ? "image/png"
+      : ext === "jpg" || ext === "jpeg"
+      ? "image/jpeg"
+      : ext === "svg"
+      ? "image/svg+xml"
+      : ext === "ico"
+      ? "image/x-icon"
       : "text/plain";
 
     return new Response(file, {
@@ -47,160 +153,506 @@ async function serveFile(path: string): Promise<Response> {
 
 // Handle WebSocket connections
 function handleWebSocket(socket: WebSocket) {
-  console.log("Client connected");
+  log("Client connected");
+
+  // Add to connected clients
+  connectedClients.add(socket);
+  log(`Total connected clients: ${connectedClients.size}`);
 
   const sessionLogger = new SessionLogger();
 
-  function send(msg: ServerMessage) {
-    socket.send(JSON.stringify(msg));
-  }
-
-  // Send session info immediately on connect
-  const interruptedTask = globalSession.getInterruptedTask();
-  const messages = globalSession.getMessages();
-
-  // Build history for client display
-  const history: Array<{role: string; content: string; isTask?: boolean}> = [];
-  for (const msg of messages) {
-    if (msg.role === "user") {
-      history.push({
-        role: "user",
-        content: msg.content as string,
-        isTask: true,
-      });
-    } else if (msg.role === "assistant") {
-      // Skip assistant messages for now (they're tool use JSON)
-      // We'll just show user tasks
+  // Helper to send to just this client (for session_info on connect)
+  function sendToClient(msg: ServerMessage) {
+    if (socket.readyState === WebSocket.OPEN) {
+      try {
+        socket.send(JSON.stringify(msg));
+      } catch (err) {
+        error("Failed to send to client:", err);
+      }
     }
   }
 
-  send({
-    type: "session_info",
-    messageCount: messages.length,
-    ...(interruptedTask && { interruptedTask }),
-    history,
-  });
+  // Function to send initial session info
+  function sendSessionInfo(isReconnection = false) {
+    const interruptedTask = globalSession.getInterruptedTask();
+    const messages = globalSession.getMessages();
+    const tokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    const sizeInfo = globalSession.getSessionSizeInfo();
 
-  if (interruptedTask) {
-    send({
-      type: "log",
-      content: `⚠️  Found interrupted task: "${interruptedTask}"`,
-      level: "info",
+    // Check if there's currently an active task running
+    const hasActiveTask = activeTasks.size > 0;
+
+    // Format conversation history for display
+    const history = formatSessionHistory(messages);
+
+    sendToClient({
+      type: "session_info",
+      messageCount: messages.length,
+      tokenUsage,
+      history,
+      contextSize: {
+        estimatedTokens: sizeInfo.estimatedTokens,
+        bytes: sizeInfo.bytes,
+      },
+      // Only show interrupted task if there's no active task currently running
+      ...(!hasActiveTask && interruptedTask && { interruptedTask }),
     });
+
+    // Send connection status message that gets stored in history
+    if (isReconnection && messages.length > 0) {
+      // This is a reconnection to an existing session - add to history
+      globalSession.addMessage({
+        role: "assistant",
+        content: "Server reconnected"
+      });
+      
+      broadcast({
+        type: "system",
+        content: "Server reconnected",
+        level: "info",
+      });
+    } else if (messages.length > 0) {
+      // Client refresh of existing session - add to history  
+      globalSession.addMessage({
+        role: "assistant", 
+        content: "Client reconnected"
+      });
+      
+      broadcast({
+        type: "system",
+        content: "Client reconnected", 
+        level: "info",
+      });
+    }
+
+    // Warn if context is getting large
+    const CONTEXT_WARNING_THRESHOLD = 80000; // Warn at 80K tokens
+    const CONTEXT_DANGER_THRESHOLD = 100000; // Urgent warning at 100K tokens
+
+    if (sizeInfo.estimatedTokens > CONTEXT_DANGER_THRESHOLD) {
+      sendToClient({
+        type: "system",
+        content: `🔴 Context size critical: ~${Math.round(sizeInfo.estimatedTokens / 1000)}K tokens. Responses may be truncated. Clear session recommended!`,
+        level: "error",
+      });
+    } else if (sizeInfo.estimatedTokens > CONTEXT_WARNING_THRESHOLD) {
+      sendToClient({
+        type: "system",
+        content: `⚠️  Context size growing: ~${Math.round(sizeInfo.estimatedTokens / 1000)}K tokens. Consider clearing session soon.`,
+        level: "info",
+      });
+    }
+
+    // Send connection status (header update)
+    sendToClient({
+      type: "connection_status",
+      status: "connected"
+    });
+
+    // Show server restart message if there was a task interrupted by restart
+    if (!hasActiveTask && interruptedTask) {
+      const task = globalSession.getCurrentTask();
+      if (task && task.interruptionReason === "server_restart") {
+        sendToClient({
+          type: "system",
+          content: "🔄 Server restarted during task execution",
+          level: "info",
+        });
+      }
+    }
+  }
+
+  // Send session info immediately if socket is already OPEN, otherwise wait for onopen event
+  if (socket.readyState === WebSocket.OPEN) {
+    sendSessionInfo();
+  } else {
+    socket.onopen = () => {
+      sendSessionInfo();
+    };
   }
 
   socket.onmessage = async (event) => {
     try {
       const message: ClientMessage = JSON.parse(event.data);
 
-      if (message.type === "archive_session") {
-        await archiveCurrentSession();
-        await globalSession.clear();
-        send({
-          type: "log",
-          content: `✨ Session archived. Starting fresh!`,
-          level: "success",
-        });
-        send({
-          type: "session_info",
-          messageCount: 0,
-          history: [],
+      if (message.type === "stop_task") {
+        // Stop any currently running task
+        for (const [taskId, taskInfo] of activeTasks.entries()) {
+          taskInfo.stopRequested = true;
+          log(`Stop requested for task: ${taskId}`);
+        }
+        broadcast({
+          type: "system",
+          content: "Stopping task...",
+          level: "info",
         });
         return;
       }
 
-      if (message.type === "task") {
-        const startTime = Date.now();
-        send({ type: "log", content: "🤖 Claude is working on your task...", level: "info" });
+      if (message.type === "archive_session" || message.type === "clear_session") {
+        await archiveCurrentSession();
+        await globalSession.clear();
 
+        const tokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+        const sizeInfo = globalSession.getSessionSizeInfo();
+
+        // Send state update
+        broadcast({
+          type: "session_info",
+          messageCount: 0,
+          tokenUsage,
+          history: [],
+          contextSize: {
+            estimatedTokens: sizeInfo.estimatedTokens,
+            bytes: sizeInfo.bytes,
+          },
+        });
+        
+        // Send minimal system message
+        broadcast({
+          type: "system",
+          content: "Session cleared",
+          level: "success",
+        });
+        return;
+      }
+
+      if (message.type === "git.status") {
         try {
-          // Mark task as started
-          globalSession.startTask(message.content);
-
-          // Add user message to persistent session
-          globalSession.addMessage({
-            role: "user",
-            content: message.content,
+          broadcast({
+            type: "processing_status",
+            isProcessing: true,
+            message: "Running git status..."
           });
 
-          // Execute task with Claude using tool use
-          let taskComplete = false;
-          const conversationHistory = globalSession.getMessages();
-          for await (const chunk of executeTaskWithClaude(message.content, conversationHistory)) {
-            if (chunk.type === "text") {
-              send({ type: "log", content: chunk.content, level: "info" });
-            } else if (chunk.type === "tool_use") {
-              send({
-                type: "tool_use",
-                toolName: chunk.toolName!,
-                input: chunk.toolInput,
-              });
-              send({
-                type: "log",
-                content: `🔧 ${chunk.content}`,
-                level: "tool",
-              });
-            } else if (chunk.type === "tool_result") {
-              send({
-                type: "tool_result",
-                content: chunk.content,
-                isError: chunk.isError || false,
-              });
-              const resultPreview = chunk.content.slice(0, 200) + (chunk.content.length > 200 ? "..." : "");
-              send({
-                type: "log",
-                content: chunk.isError ? `❌ ${resultPreview}` : `✓ ${resultPreview}`,
-                level: chunk.isError ? "error" : "success",
-              });
-            } else if (chunk.type === "complete") {
-              taskComplete = true;
-            }
-          }
+          const cmd = new Deno.Command("git", {
+            args: ["status"],
+            cwd: Deno.cwd(),
+            stdout: "piped",
+            stderr: "piped",
+          });
+          const { code, stdout, stderr } = await cmd.output();
+          const output = new TextDecoder().decode(stdout);
+          const errorOutput = new TextDecoder().decode(stderr);
 
-          // Mark task as complete
-          globalSession.completeTask();
+          // Show git output as assistant response
+          broadcast({
+            type: "assistant_response",
+            content: code === 0 ? output : errorOutput,
+          });
 
-          // Log to session
-          await sessionLogger.logTask(
-            message.content,
-            { completed: taskComplete },
-            taskComplete,
-            startTime,
-          );
-
-          send({
+          broadcast({
+            type: "processing_status",
+            isProcessing: false
+          });
+          
+          broadcast({
             type: "task_complete",
-            summary: "Task completed successfully",
-          });
-          send({
-            type: "log",
-            content: `📝 Session logged to ${sessionLogger.getSessionFile().split("/").pop()}`,
-            level: "info",
+            summary: "Git status complete",
           });
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-
-          // Mark task as failed
-          globalSession.failTask();
-
-          send({
-            type: "log",
-            content: `Error: ${errorMsg}`,
+          broadcast({
+            type: "system",
+            content: `Git error: ${error instanceof Error ? error.message : String(error)}`,
             level: "error",
           });
-
-          await sessionLogger.logTask(
-            message.content,
-            null,
-            false,
-            startTime,
-            errorMsg,
-          );
+          
+          broadcast({
+            type: "processing_status",
+            isProcessing: false
+          });
         }
+        return;
+      }
+
+      if (message.type === "git.diff") {
+        try {
+          broadcast({
+            type: "processing_status",
+            isProcessing: true,
+            message: "Running git diff..."
+          });
+
+          const cmd = new Deno.Command("git", {
+            args: ["diff"],
+            cwd: Deno.cwd(),
+            stdout: "piped",
+            stderr: "piped",
+          });
+          const { code, stdout, stderr } = await cmd.output();
+          const output = new TextDecoder().decode(stdout);
+          const errorOutput = new TextDecoder().decode(stderr);
+
+          if (code === 0 && output) {
+            broadcast({
+              type: "assistant_response",
+              content: output,
+            });
+          } else if (code === 0 && !output) {
+            broadcast({
+              type: "system",
+              content: "No changes to show",
+              level: "info",
+            });
+          } else {
+            broadcast({
+              type: "system",
+              content: `Git diff error: ${errorOutput}`,
+              level: "error",
+            });
+          }
+          
+          broadcast({
+            type: "processing_status",
+            isProcessing: false
+          });
+          
+          broadcast({
+            type: "task_complete",
+            summary: "Git diff complete",
+          });
+        } catch (error) {
+          broadcast({
+            type: "system",
+            content: `Git error: ${error instanceof Error ? error.message : String(error)}`,
+            level: "error",
+          });
+          
+          broadcast({
+            type: "processing_status",
+            isProcessing: false
+          });
+        }
+        return;
+      }
+
+      if (message.type === "task") {
+        // Check if this is a slash command
+        const slashCommand = handleSlashCommand(message.content);
+        if (slashCommand.handled) {
+          // Handle the slash command by converting it to the appropriate message type
+          const commandMessage = { type: slashCommand.type, content: message.content };
+          // Recursively handle the converted command
+          socket.onmessage?.({ data: JSON.stringify(commandMessage) } as MessageEvent);
+          return;
+        }
+
+        // Check if user wants to continue an interrupted task
+        const isContinueRequest = message.content.trim().toLowerCase() === "continue";
+        const interruptedTask = globalSession.getInterruptedTask();
+        const currentTaskInfo = globalSession.getCurrentTask();
+
+        let taskMessage = message.content;
+        if (isContinueRequest && interruptedTask && currentTaskInfo?.canResume) {
+          // Transform "continue" into a context-aware continuation request
+          const reasonText = currentTaskInfo.interruptionReason === "max_iterations"
+            ? `You reached the iteration limit (${currentTaskInfo.iterationCount}/25) while working on this`
+            : currentTaskInfo.interruptionReason === "server_restart"
+            ? "The server restarted while you were working on this"
+            : "The task was interrupted";
+
+          taskMessage = `Continue the interrupted task: "${interruptedTask}". ${reasonText}. Please continue from where you left off.`;
+
+          log(`Continuing interrupted task: ${interruptedTask}`);
+
+          // Clear the interrupted status since we're resuming
+          globalSession.clearCurrentTask();
+        }
+
+        const startTime = Date.now();
+        const taskId = `task_${startTime}_${Math.random().toString(36).substr(2, 9)}`;
+
+        log(`Starting task: ${taskMessage}`);
+
+        // Track this task
+        activeTasks.set(taskId, {
+          taskId,
+          stopRequested: false,
+          startTime,
+          sessionLogger,
+          content: taskMessage
+        });
+        
+        // Send user message to chat (show original if "continue", otherwise show taskMessage)
+        broadcast({
+          type: "user_message",
+          content: isContinueRequest && interruptedTask ? `continue` : taskMessage
+        });
+
+        // Update processing status (header)
+        broadcast({
+          type: "processing_status",
+          isProcessing: true,
+          message: "Claude is thinking..."
+        });
+
+        // Run task asynchronously to ensure completion even if client disconnects
+        (async () => {
+          try {
+            // Mark task as started (use taskMessage which has full context)
+            globalSession.startTask(taskMessage);
+
+            // Add user message to persistent session (use taskMessage for full context)
+            globalSession.addMessage({
+              role: "user",
+              content: taskMessage,
+            });
+
+            // Execute task with Claude using tool use
+            let taskComplete = false;
+            let taskStopped = false;
+            const conversationHistory = globalSession.getMessages();
+            let currentTextMessage = ""; // Accumulate text chunks
+            let hasStartedAssistantMessage = false;
+            let currentToolId: string | null = null;
+
+            // Create a stop check function
+            const shouldStop = () => {
+              const taskInfo = activeTasks.get(taskId);
+              return taskInfo?.stopRequested || false;
+            };
+
+            let finalMessages: any[] = [];
+
+            for await (const chunk of executeTaskWithClaude(taskMessage, conversationHistory, globalSession, shouldStop, undefined)) {
+              if (chunk.type === "text_delta") {
+                // Start assistant message on first text delta
+                if (!hasStartedAssistantMessage) {
+                  broadcast({ type: "assistant_response" });
+                  hasStartedAssistantMessage = true;
+                }
+                // Stream text as it arrives
+                currentTextMessage += chunk.content;
+                broadcast({ type: "text_delta", content: chunk.content });
+              } else if (chunk.type === "text") {
+                // Final text response
+                if (!hasStartedAssistantMessage) {
+                  broadcast({ type: "assistant_response" });
+                  hasStartedAssistantMessage = true;
+                }
+                broadcast({ type: "text_delta", content: chunk.content });
+              } else if (chunk.type === "tool_use") {
+                hasStartedAssistantMessage = false; // Reset for next message
+                currentToolId = crypto.randomUUID();
+                broadcast({
+                  type: "tool_use",
+                  toolName: chunk.toolName!,
+                  toolId: currentToolId,
+                  toolInput: chunk.toolInput
+                });
+              } else if (chunk.type === "tool_result") {
+                broadcast({
+                  type: "tool_result",
+                  toolId: currentToolId || crypto.randomUUID(),
+                  content: chunk.content,
+                  isError: chunk.isError || false
+                });
+                currentToolId = null;
+              } else if (chunk.type === "token_usage") {
+                // Broadcast token usage to all clients
+                if (chunk.tokenUsage) {
+                  broadcast({
+                    type: "token_usage",
+                    usage: {
+                      inputTokens: chunk.tokenUsage.inputTokens,
+                      outputTokens: chunk.tokenUsage.outputTokens,
+                      totalTokens: chunk.tokenUsage.totalTokens,
+                    },
+                    formatted: `${chunk.tokenUsage.totalTokens.toLocaleString()} tokens (${chunk.tokenUsage.inputTokens.toLocaleString()} in, ${chunk.tokenUsage.outputTokens.toLocaleString()} out)`
+                  });
+                }
+              } else if ((chunk as any).type === "conversation_history") {
+                // Capture the full conversation history
+                finalMessages = (chunk as any).conversationHistory || [];
+              } else if (chunk.type === "complete") {
+                taskComplete = true;
+                if (chunk.content === "Task stopped by user") {
+                  taskStopped = true;
+                }
+              }
+            }
+
+            // Final safety check: save any remaining messages
+            // NOTE: Messages are now saved incrementally in claude.ts after each tool call
+            // This is just a fallback to catch any edge cases
+            if (finalMessages.length > conversationHistory.length) {
+              // Add any new messages that weren't saved incrementally
+              const newMessages = finalMessages.slice(conversationHistory.length);
+              if (newMessages.length > 0) {
+                for (const msg of newMessages) {
+                  globalSession.addMessage(msg);
+                }
+                await globalSession.save();
+                log(`Saved ${newMessages.length} additional messages to session`);
+              }
+            } else if (currentTextMessage.trim() && finalMessages.length === 0) {
+              // Edge case: text response but no finalMessages captured
+              globalSession.addMessage({
+                role: "assistant",
+                content: [{ type: "text", text: currentTextMessage }],
+              });
+              await globalSession.save();
+            }
+
+            // Complete task (successfully or stopped)
+            await completeTaskSafely(taskId, !taskStopped);
+
+            // Update processing status
+            broadcast({
+              type: "processing_status",
+              isProcessing: false
+            });
+
+            if (taskStopped) {
+              broadcast({
+                type: "task_complete",
+                summary: "Task stopped by user",
+              });
+
+              broadcast({
+                type: "system",
+                content: "Task stopped",
+                level: "info",
+              });
+            } else {
+              broadcast({
+                type: "task_complete",
+                summary: "Task completed successfully",
+              });
+
+              // Minimal system message for session logging
+              const sessionFile = sessionLogger.getSessionFile().split("/").pop();
+              broadcast({
+                type: "system",
+                content: `Logged to ${sessionFile}`,
+                level: "info",
+              });
+            }
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+
+            // Complete task with error
+            await completeTaskSafely(taskId, false, errorMsg);
+
+            // Update processing status
+            broadcast({
+              type: "processing_status",
+              isProcessing: false
+            });
+
+            broadcast({
+              type: "system",
+              content: `Error: ${errorMsg}`,
+              level: "error",
+            });
+          }
+        })();
+        
+        return;
       }
     } catch (error) {
-      send({
-        type: "log",
+      broadcast({
+        type: "system",
         content: `Error: ${error instanceof Error ? error.message : String(error)}`,
         level: "error",
       });
@@ -208,11 +660,14 @@ function handleWebSocket(socket: WebSocket) {
   };
 
   socket.onclose = () => {
-    console.log("Client disconnected");
+    log("Client disconnected");
+    connectedClients.delete(socket);
+    log(`Total connected clients: ${connectedClients.size}`);
   };
 
-  socket.onerror = (error) => {
-    console.error("WebSocket error:", error);
+  socket.onerror = (err) => {
+    error("WebSocket error:", err);
+    connectedClients.delete(socket);
   };
 }
 
@@ -232,5 +687,10 @@ Deno.serve({ port: PORT }, (req) => {
   return serveFile(`.${path}`);
 });
 
-console.log(`Server running at http://localhost:${PORT}`);
-console.log("Make sure ANTHROPIC_API_KEY is set in your environment");
+const startupTime = new Date().toISOString();
+log(`========================================`);
+log(`Server (re)started at ${startupTime}`);
+log(`Running at http://localhost:${PORT}`);
+log(`Started with: deno task ${Deno.env.get("DENO_TASK_NAME") || "start"}`);
+log(`Server logs: .sense/server.log`);
+log(`========================================`);

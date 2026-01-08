@@ -28,8 +28,26 @@ export const TOOLS = [
     },
   },
   {
-    name: "write_file",
-    description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Creates parent directories as needed.",
+    name: "create_file",
+    description: "Create a NEW file with content. Fails if file already exists. Use edit_file_range or edit_file to modify existing files. Creates parent directories as needed.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Path to the new file relative to project root",
+        },
+        content: {
+          type: "string",
+          description: "Content to write to the new file",
+        },
+      },
+      required: ["path", "content"],
+    },
+  },
+  {
+    name: "edit_file",
+    description: "Edit an existing file by replacing exact string matches. For small, precise edits. The old_string must match exactly (including whitespace). For multi-line changes, prefer edit_file_range.",
     input_schema: {
       type: "object",
       properties: {
@@ -37,26 +55,78 @@ export const TOOLS = [
           type: "string",
           description: "Path to the file relative to project root",
         },
-        content: {
+        old_string: {
           type: "string",
-          description: "Content to write to the file",
+          description: "Exact string to find and replace. Must match exactly including whitespace.",
+        },
+        new_string: {
+          type: "string",
+          description: "String to replace old_string with",
         },
       },
-      required: ["path", "content"],
+      required: ["path", "old_string", "new_string"],
     },
   },
   {
-    name: "list_directory",
-    description: "List files and directories in a given path. Returns an array of entry names.",
+    name: "read_file_range",
+    description: "Read specific line range from a file. More efficient than reading entire large files. Lines are 1-indexed.",
     input_schema: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "Path to the directory relative to project root (use '.' for root)",
+          description: "Path to the file relative to project root",
+        },
+        start_line: {
+          type: "number",
+          description: "Starting line number (1-indexed, inclusive)",
+        },
+        end_line: {
+          type: "number",
+          description: "Ending line number (1-indexed, inclusive). Use -1 for end of file.",
         },
       },
-      required: ["path"],
+      required: ["path", "start_line", "end_line"],
+    },
+  },
+  {
+    name: "edit_file_range",
+    description: "RECOMMENDED: Replace specific line range with new content. Most reliable editing method - works even if file was auto-formatted. Use this for multi-line changes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Path to the file relative to project root",
+        },
+        start_line: {
+          type: "number",
+          description: "Starting line number to replace (1-indexed, inclusive)",
+        },
+        end_line: {
+          type: "number",
+          description: "Ending line number to replace (1-indexed, inclusive)",
+        },
+        new_content: {
+          type: "string",
+          description: "New content to replace the specified line range",
+        },
+      },
+      required: ["path", "start_line", "end_line", "new_content"],
+    },
+  },
+  {
+    name: "list_directory",
+    description: "List files and directories in a given path. Directories are marked with trailing /. To explore subdirectories, call this tool again with the subdirectory path (e.g., 'client', 'server', 'client/components').",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Path to the directory relative to project root. Defaults to '.' (current directory) if not provided. Examples: '.' for root, 'client' for client directory, 'server' for server directory, 'client/components' for nested directories.",
+        },
+      },
+      required: [],
     },
   },
   {
@@ -91,6 +161,15 @@ export const TOOLS = [
       required: ["pattern"],
     },
   },
+  {
+    name: "reload_server",
+    description: "Reload the server to apply code changes. Use this after modifying server code (tools, handlers, etc.) to make changes take effect. The server will restart automatically in watch mode.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // Execute a tool call
@@ -108,11 +187,19 @@ export async function executeTool(
           };
         }
         const path = sanitizePath(input.path);
-        const content = await Deno.readTextFile(path);
+        let content = await Deno.readTextFile(path);
+
+        // Limit file size to prevent context explosion (max 10K chars)
+        const MAX_FILE_CHARS = 10000;
+        if (content.length > MAX_FILE_CHARS) {
+          content = content.slice(0, MAX_FILE_CHARS) +
+            `\n\n... [file truncated at ${MAX_FILE_CHARS} characters, total size: ${content.length} chars]`;
+        }
+
         return { content, isError: false };
       }
 
-      case "write_file": {
+      case "create_file": {
         if (!input.path || typeof input.path !== "string") {
           return {
             content: "Path is required and must be a string",
@@ -126,25 +213,224 @@ export async function executeTool(
           };
         }
         const path = sanitizePath(input.path);
+
+        // Check if file already exists
+        try {
+          await Deno.stat(path);
+          return {
+            content: `File ${input.path} already exists. Use edit_file_range or edit_file to modify existing files.`,
+            isError: true,
+          };
+        } catch {
+          // File doesn't exist, we can create it
+        }
+
         await Deno.mkdir(dirname(path), { recursive: true });
         await Deno.writeTextFile(path, input.content);
-        return { content: `Successfully wrote ${input.path}`, isError: false };
+        return { content: `Successfully created ${input.path}`, isError: false };
+      }
+
+      case "edit_file": {
+        if (!input.path || typeof input.path !== "string") {
+          return {
+            content: "Path is required and must be a string",
+            isError: true,
+          };
+        }
+        if (!input.old_string || typeof input.old_string !== "string") {
+          return {
+            content: "old_string is required and must be a string",
+            isError: true,
+          };
+        }
+        if (input.new_string === undefined || typeof input.new_string !== "string") {
+          return {
+            content: "new_string is required and must be a string",
+            isError: true,
+          };
+        }
+
+        const path = sanitizePath(input.path);
+
+        // Read current file content
+        let content: string;
+        try {
+          content = await Deno.readTextFile(path);
+        } catch {
+          return {
+            content: `File ${input.path} not found. Use create_file to create new files.`,
+            isError: true,
+          };
+        }
+
+        // Find and replace
+        if (!content.includes(input.old_string)) {
+          return {
+            content: `String not found in ${input.path}. Make sure old_string matches exactly (including whitespace). Consider using edit_file_range for more reliable editing.`,
+            isError: true,
+          };
+        }
+
+        const newContent = content.replace(input.old_string, input.new_string);
+        await Deno.writeTextFile(path, newContent);
+
+        return {
+          content: `Successfully edited ${input.path}`,
+          isError: false
+        };
+      }
+
+      case "read_file_range": {
+        if (!input.path || typeof input.path !== "string") {
+          return {
+            content: "Path is required and must be a string",
+            isError: true,
+          };
+        }
+        if (typeof input.start_line !== "number" || typeof input.end_line !== "number") {
+          return {
+            content: "start_line and end_line are required and must be numbers",
+            isError: true,
+          };
+        }
+
+        const path = sanitizePath(input.path);
+        const content = await Deno.readTextFile(path);
+        const lines = content.split("\n");
+
+        const startIdx = Math.max(0, input.start_line - 1);
+        const endIdx = input.end_line === -1 ? lines.length : input.end_line;
+
+        if (startIdx >= lines.length) {
+          return {
+            content: `start_line ${input.start_line} exceeds file length (${lines.length} lines)`,
+            isError: true,
+          };
+        }
+
+        const selectedLines = lines.slice(startIdx, endIdx);
+        const result = selectedLines.map((line, idx) =>
+          `${startIdx + idx + 1}: ${line}`
+        ).join("\n");
+
+        return { content: result, isError: false };
+      }
+
+      case "edit_file_range": {
+        if (!input.path || typeof input.path !== "string") {
+          return {
+            content: "Path is required and must be a string",
+            isError: true,
+          };
+        }
+        if (typeof input.start_line !== "number" || typeof input.end_line !== "number") {
+          return {
+            content: "start_line and end_line are required and must be numbers",
+            isError: true,
+          };
+        }
+        if (input.new_content === undefined || typeof input.new_content !== "string") {
+          return {
+            content: "new_content is required and must be a string",
+            isError: true,
+          };
+        }
+
+        const path = sanitizePath(input.path);
+
+        // Read current file content
+        let content: string;
+        try {
+          content = await Deno.readTextFile(path);
+        } catch {
+          return {
+            content: `File ${input.path} not found. Use create_file to create new files.`,
+            isError: true,
+          };
+        }
+
+        const lines = content.split("\n");
+        const startIdx = input.start_line - 1; // Convert to 0-indexed
+        const endIdx = input.end_line; // End is exclusive in slice
+
+        // Validate line numbers
+        if (startIdx < 0 || startIdx >= lines.length) {
+          return {
+            content: `start_line ${input.start_line} is out of range (file has ${lines.length} lines)`,
+            isError: true,
+          };
+        }
+        if (endIdx < startIdx || endIdx > lines.length) {
+          return {
+            content: `end_line ${input.end_line} is out of range (must be >= start_line and <= ${lines.length})`,
+            isError: true,
+          };
+        }
+
+        // Replace the line range
+        const before = lines.slice(0, startIdx);
+        const after = lines.slice(endIdx);
+        const newLines = [...before, input.new_content, ...after];
+        const newContent = newLines.join("\n");
+
+        await Deno.writeTextFile(path, newContent);
+
+        const replacedCount = endIdx - startIdx;
+        return {
+          content: `Successfully edited ${input.path} (replaced lines ${input.start_line}-${input.end_line}, ${replacedCount} lines replaced)`,
+          isError: false
+        };
       }
 
       case "list_directory": {
-        const pathInput = input.path || ".";
+        // Default to current directory if path not provided or empty
+        const pathInput = (input.path && typeof input.path === "string" && input.path.trim())
+          ? input.path.trim()
+          : ".";
+
         if (typeof pathInput !== "string") {
           return {
-            content: `Path must be a string, received "${typeof pathInput}". Use "." for current directory.`,
+            content: `Path must be a string, received "${typeof pathInput}". Use "." for current directory, or specify a subdirectory like "client" or "server".`,
             isError: true,
           };
         }
         const path = sanitizePath(pathInput);
-        const entries: string[] = [];
+        const entries: Array<{name: string; isDir: boolean}> = [];
         for await (const entry of Deno.readDir(path)) {
-          entries.push(entry.name);
+          entries.push({
+            name: entry.name,
+            isDir: entry.isDirectory
+          });
         }
-        return { content: entries.join("\n"), isError: false };
+
+        // Sort: directories first, then files
+        entries.sort((a, b) => {
+          if (a.isDir && !b.isDir) return -1;
+          if (!a.isDir && b.isDir) return 1;
+          return a.name.localeCompare(b.name);
+        });
+
+        // Format with type indicators
+        const formatted = entries.map(e =>
+          e.isDir ? `${e.name}/` : e.name
+        );
+
+        // Limit to prevent huge directories from exploding context
+        const MAX_ENTRIES = 500;
+        if (formatted.length > MAX_ENTRIES) {
+          const truncated = formatted.slice(0, MAX_ENTRIES);
+          return {
+            content: `Directories end with /. To explore a directory, call list_directory with its path (e.g., "client" or "server").\n\n` +
+              truncated.join("\n") + `\n\n... [${formatted.length - MAX_ENTRIES} more entries truncated]`,
+            isError: false
+          };
+        }
+
+        return {
+          content: `Directories end with /. To explore a directory, call list_directory with its path (e.g., "client" or "server").\n\n` +
+            formatted.join("\n"),
+          isError: false
+        };
       }
 
       case "execute_command": {
@@ -165,7 +451,14 @@ export async function executeTool(
         const { code, stdout, stderr } = await process.output();
         const output = new TextDecoder().decode(stdout);
         const errorOutput = new TextDecoder().decode(stderr);
-        const combined = output + errorOutput;
+        let combined = output + errorOutput;
+
+        // Limit command output to prevent context explosion
+        const MAX_OUTPUT_CHARS = 5000;
+        if (combined.length > MAX_OUTPUT_CHARS) {
+          combined = combined.slice(0, MAX_OUTPUT_CHARS) +
+            `\n\n... [output truncated at ${MAX_OUTPUT_CHARS} characters, total: ${combined.length} chars]`;
+        }
 
         if (code !== 0) {
           return {
@@ -194,13 +487,48 @@ export async function executeTool(
         });
 
         const { stdout, stderr } = await process.output();
-        const output = new TextDecoder().decode(stdout);
+        let output = new TextDecoder().decode(stdout);
         const errorOutput = new TextDecoder().decode(stderr);
+
+        // Limit output to prevent context explosion (max 100 lines or 5000 chars)
+        const lines = output.split('\n');
+        const MAX_LINES = 100;
+        const MAX_CHARS = 5000;
+
+        if (lines.length > MAX_LINES) {
+          output = lines.slice(0, MAX_LINES).join('\n') +
+            `\n\n... [${lines.length - MAX_LINES} more matches truncated]`;
+        } else if (output.length > MAX_CHARS) {
+          output = output.slice(0, MAX_CHARS) +
+            `\n\n... [output truncated at ${MAX_CHARS} characters]`;
+        }
 
         return {
           content: output || errorOutput || "No matches found",
           isError: false,
         };
+      }
+
+      case "reload_server": {
+        try {
+          // Touch main.ts to trigger Deno's watch mode reload
+          const mainPath = join(BASE_DIR, "server", "main.ts");
+          const stat = await Deno.stat(mainPath);
+
+          // Update the file's access and modification times to trigger reload
+          const now = new Date();
+          await Deno.utime(mainPath, now, now);
+
+          return {
+            content: "Server reload triggered. The server will restart in watch mode and apply all code changes. This may take a few seconds.",
+            isError: false,
+          };
+        } catch (error) {
+          return {
+            content: `Failed to trigger reload: ${error instanceof Error ? error.message : String(error)}`,
+            isError: true,
+          };
+        }
       }
 
       default:

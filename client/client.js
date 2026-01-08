@@ -1,92 +1,20 @@
+// DOM elements
 const output = document.getElementById("output");
 const statusEl = document.getElementById("status");
+const tokenInfo = document.getElementById("tokenInfo");
 const taskInput = document.getElementById("taskInput");
 const submitBtn = document.getElementById("submitBtn");
-const statusBtn = document.getElementById("statusBtn");
-const diffBtn = document.getElementById("diffBtn");
-const archiveBtn = document.getElementById("archiveBtn");
+const stopBtn = document.getElementById("stopBtn");
 
+// State
 let ws;
 let isProcessing = false;
-let interruptedTask = null;
+let currentAssistantMessage = null;
+let currentAssistantText = "";
+let currentToolUse = null;
+let isFirstConnection = true;
 
-function showRetryPrompt(task) {
-  const retryDiv = document.createElement("div");
-  retryDiv.className = "log-entry";
-  retryDiv.style.cssText = "background: #3e3e42; padding: 12px; margin: 8px 0; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;";
-
-  const textSpan = document.createElement("span");
-  textSpan.textContent = `⚠️  Previous task was interrupted: "${task}"`;
-  retryDiv.appendChild(textSpan);
-
-  const buttonContainer = document.createElement("div");
-  buttonContainer.style.cssText = "display: flex; gap: 8px;";
-
-  const retryBtn = document.createElement("button");
-  retryBtn.textContent = "Retry";
-  retryBtn.style.cssText = "padding: 4px 12px; font-size: 12px;";
-  retryBtn.onclick = () => {
-    taskInput.value = task;
-    retryDiv.remove();
-    interruptedTask = null;
-    addLog("Retrying interrupted task...", "info");
-    submitBtn.click();
-  };
-
-  const dismissBtn = document.createElement("button");
-  dismissBtn.textContent = "Dismiss";
-  dismissBtn.className = "secondary";
-  dismissBtn.style.cssText = "padding: 4px 12px; font-size: 12px;";
-  dismissBtn.onclick = () => {
-    retryDiv.remove();
-    interruptedTask = null;
-  };
-
-  buttonContainer.appendChild(retryBtn);
-  buttonContainer.appendChild(dismissBtn);
-  retryDiv.appendChild(buttonContainer);
-
-  output.appendChild(retryDiv);
-  output.scrollTop = output.scrollHeight;
-}
-
-function addLog(content, level = "info") {
-  const entry = document.createElement("div");
-  entry.className = `log-entry ${level}`;
-  entry.textContent = content;
-  output.appendChild(entry);
-  output.scrollTop = output.scrollHeight;
-}
-
-function showDiff(content) {
-  const diffView = document.createElement("div");
-  diffView.className = "diff-view";
-
-  const lines = content.split("\n");
-  lines.forEach(line => {
-    const span = document.createElement("span");
-    if (line.startsWith("+") && !line.startsWith("+++")) {
-      span.className = "added";
-    } else if (line.startsWith("-") && !line.startsWith("---")) {
-      span.className = "removed";
-    }
-    span.textContent = line + "\n";
-    diffView.appendChild(span);
-  });
-
-  output.appendChild(diffView);
-  output.scrollTop = output.scrollHeight;
-}
-
-function setProcessing(processing) {
-  isProcessing = processing;
-  submitBtn.disabled = processing;
-  statusBtn.disabled = processing;
-  diffBtn.disabled = processing;
-  archiveBtn.disabled = processing;
-  taskInput.disabled = processing;
-}
-
+// WebSocket connection
 function connect() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   ws = new WebSocket(`${protocol}//${window.location.host}`);
@@ -94,149 +22,500 @@ function connect() {
   ws.onopen = () => {
     statusEl.textContent = "Connected";
     statusEl.classList.add("connected");
-    // Server will automatically send session info on connect
+  };
+
+  ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    handleMessage(message);
   };
 
   ws.onclose = () => {
     statusEl.textContent = "Disconnected";
     statusEl.classList.remove("connected");
-    addLog("Disconnected from server", "error");
     setProcessing(false);
-
-    // Attempt reconnect after 2 seconds
-    setTimeout(connect, 2000);
+    setTimeout(connect, 2000); // Reconnect after 2s
   };
 
-  ws.onerror = () => {
-    addLog("WebSocket error", "error");
-  };
-
-  ws.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-
-    switch (message.type) {
-      case "session_info":
-        console.log(`Session loaded: ${message.messageCount} messages`);
-
-        // Display history
-        if (message.history && message.history.length > 0) {
-          output.innerHTML = ""; // Clear welcome message
-          for (const entry of message.history) {
-            if (entry.isTask) {
-              addLog(`📋 Previous task: ${entry.content}`, "info");
-            }
-          }
-          addLog("─".repeat(50), "info");
-          addLog("Connected to Sense server", "success");
-        }
-
-        // Handle interrupted task
-        if (message.interruptedTask) {
-          interruptedTask = message.interruptedTask;
-          showRetryPrompt(message.interruptedTask);
-        }
-        break;
-
-      case "log":
-        addLog(message.content, message.level);
-        break;
-
-      case "tool_use":
-        addLog(`🔧 ${message.toolName}`, "tool");
-        break;
-
-      case "tool_result":
-        if (message.isError) {
-          addLog(`❌ Tool error: ${message.content.slice(0, 200)}`, "error");
-        }
-        // Success results are shown via "log" messages
-        break;
-
-      case "thinking":
-        addLog(`💭 ${message.content}`, "info");
-        break;
-
-      case "task_complete":
-        setProcessing(false);
-        break;
-    }
+  ws.onerror = (error) => {
+    console.error("WebSocket error:", error);
   };
 }
 
-submitBtn.onclick = () => {
+// Handle all incoming messages from server
+function handleMessage(message) {
+  switch (message.type) {
+    case "session_info":
+      handleSessionInfo(message);
+      break;
+
+    case "connection_status":
+      // Already handled by ws.onopen/onclose
+      break;
+
+    case "processing_status":
+      setProcessing(message.isProcessing);
+      break;
+
+    case "token_usage":
+      if (message.formatted) {
+        tokenInfo.textContent = message.formatted;
+        tokenInfo.style.display = "block";
+      }
+      break;
+
+    case "user_message":
+      addUserMessage(message.content);
+      break;
+
+    case "assistant_response":
+      startAssistantMessage();
+      if (message.content) {
+        appendToAssistantMessage(message.content);
+      }
+      break;
+
+    case "text_delta":
+      appendToAssistantMessage(message.content);
+      break;
+
+    case "thinking":
+      addThinkingBlock(message.content);
+      break;
+
+    case "tool_use":
+      addToolUse(message.toolName, message.toolId, message.toolInput);
+      break;
+
+    case "tool_result":
+      addToolResult(message.toolId, message.content, message.isError);
+      break;
+
+    case "system":
+      addSystemMessage(message.content, message.level);
+      break;
+
+    case "task_complete":
+      finishAssistantMessage();
+      scrollToBottom();
+      break;
+
+    default:
+      console.log("Unknown message type:", message.type);
+  }
+}
+
+// Handle session info (includes history)
+function handleSessionInfo(message) {
+  // Update token info if available
+  if (message.contextSize && message.contextSize.estimatedTokens > 0) {
+    tokenInfo.textContent = `~${message.contextSize.estimatedTokens.toLocaleString()} tokens`;
+    tokenInfo.style.display = "block";
+  }
+
+  // Clear output and display history
+  output.innerHTML = "";
+
+  if (message.history && message.history.length > 0) {
+    // Render history
+    message.history.forEach(entry => {
+      if (entry.type === "user") {
+        addUserMessage(entry.content);
+      } else if (entry.type === "assistant") {
+        addAssistantMessage(entry.content);
+      } else if (entry.type === "tool") {
+        addToolFromHistory(entry);
+      } else if (entry.type === "thinking") {
+        addThinkingBlock(entry.content);
+      }
+    });
+  } else {
+    // Empty session
+    addSystemMessage("Connected to server, ready for tasks.", "info");
+  }
+
+  // Handle interrupted task
+  if (message.interruptedTask) {
+    showContinuePrompt(message.interruptedTask);
+  }
+
+  scrollToBottom();
+  isFirstConnection = false;
+}
+
+// User message
+function addUserMessage(content) {
+  const message = document.createElement("div");
+  message.className = "message user";
+
+  const label = document.createElement("div");
+  label.className = "message-label";
+  label.textContent = "You";
+
+  const messageContent = document.createElement("div");
+  messageContent.className = "message-content";
+  messageContent.textContent = content;
+
+  message.appendChild(label);
+  message.appendChild(messageContent);
+  output.appendChild(message);
+  scrollToBottom();
+}
+
+// Assistant message (complete, for history)
+function addAssistantMessage(content) {
+  const message = document.createElement("div");
+  message.className = "message assistant";
+
+  const label = document.createElement("div");
+  label.className = "message-label";
+  label.textContent = "Assistant";
+
+  const messageContent = document.createElement("div");
+  messageContent.className = "message-content";
+
+  try {
+    messageContent.innerHTML = marked.parse(content);
+  } catch (e) {
+    console.error("Markdown parse error:", e);
+    messageContent.textContent = content;
+  }
+
+  message.appendChild(label);
+  message.appendChild(messageContent);
+  output.appendChild(message);
+  scrollToBottom();
+}
+
+// Start streaming assistant message
+function startAssistantMessage() {
+  // Finish any existing message first
+  finishAssistantMessage();
+
+  currentAssistantMessage = document.createElement("div");
+  currentAssistantMessage.className = "message assistant";
+  currentAssistantText = "";
+
+  const label = document.createElement("div");
+  label.className = "message-label";
+  label.textContent = "Assistant";
+
+  const messageContent = document.createElement("div");
+  messageContent.className = "message-content streaming-cursor";
+  messageContent.textContent = "";
+
+  currentAssistantMessage.appendChild(label);
+  currentAssistantMessage.appendChild(messageContent);
+  output.appendChild(currentAssistantMessage);
+  scrollToBottom();
+}
+
+// Append text to streaming assistant message
+function appendToAssistantMessage(text) {
+  if (!currentAssistantMessage) {
+    startAssistantMessage();
+  }
+
+  currentAssistantText += text;
+  const content = currentAssistantMessage.querySelector(".message-content");
+
+  // Try to render markdown in real-time
+  try {
+    content.innerHTML = marked.parse(currentAssistantText);
+  } catch (e) {
+    // If parsing fails (incomplete markdown), show raw text
+    content.textContent = currentAssistantText;
+  }
+
+  scrollToBottom();
+}
+
+// Finish streaming assistant message
+function finishAssistantMessage() {
+  if (currentAssistantMessage) {
+    const content = currentAssistantMessage.querySelector(".message-content");
+    content.classList.remove("streaming-cursor");
+
+    // Final markdown parse
+    if (currentAssistantText.trim()) {
+      try {
+        content.innerHTML = marked.parse(currentAssistantText);
+      } catch (e) {
+        console.error("Markdown parse error:", e);
+        content.textContent = currentAssistantText;
+      }
+    }
+
+    currentAssistantMessage = null;
+    currentAssistantText = "";
+  }
+}
+
+// System message
+function addSystemMessage(content, level = "info") {
+  const message = document.createElement("div");
+  message.className = `message system ${level === "error" ? "error" : ""}`;
+
+  const messageContent = document.createElement("div");
+  messageContent.className = "message-content";
+  messageContent.textContent = content;
+
+  message.appendChild(messageContent);
+  output.appendChild(message);
+  scrollToBottom();
+}
+
+// Thinking block
+function addThinkingBlock(content) {
+  const block = document.createElement("div");
+  block.className = "thinking-block";
+
+  const header = document.createElement("div");
+  header.className = "thinking-header";
+  header.innerHTML = '<span>💭 Thinking</span><span>▼</span>';
+
+  const thinkingContent = document.createElement("div");
+  thinkingContent.className = "thinking-content collapsed";
+  thinkingContent.textContent = content;
+
+  header.onclick = () => {
+    thinkingContent.classList.toggle("collapsed");
+    const arrow = header.querySelector("span:last-child");
+    arrow.textContent = thinkingContent.classList.contains("collapsed") ? "▶" : "▼";
+  };
+
+  block.appendChild(header);
+  block.appendChild(thinkingContent);
+  output.appendChild(block);
+  scrollToBottom();
+}
+
+// Tool use
+function addToolUse(toolName, toolId, toolInput) {
+  // Finish any streaming assistant message before showing tool
+  finishAssistantMessage();
+
+  const toolBlock = document.createElement("div");
+  toolBlock.className = "tool-use";
+  toolBlock.dataset.toolId = toolId;
+
+  // Format tool input parameters
+  let paramString = "";
+  if (toolInput && typeof toolInput === "object") {
+    const params = Object.entries(toolInput)
+      .map(([key, value]) => {
+        if (typeof value === "string") {
+          const displayValue = value.length > 50 ? value.substring(0, 50) + "..." : value;
+          return `${key}="${displayValue}"`;
+        }
+        return `${key}=${JSON.stringify(value)}`;
+      })
+      .join(", ");
+    paramString = params ? `(${params})` : "";
+  }
+
+  const header = document.createElement("div");
+  header.className = "tool-header";
+  header.innerHTML = `<span class="tool-name">${toolName}${paramString}</span><span style="margin-left: auto">▼</span>`;
+
+  toolBlock.appendChild(header);
+  output.appendChild(toolBlock);
+
+  currentToolUse = toolBlock;
+  scrollToBottom();
+}
+
+// Tool result
+function addToolResult(toolId, content, isError) {
+  const toolBlock = document.querySelector(`[data-tool-id="${toolId}"]`);
+  if (!toolBlock) {
+    console.warn("Tool block not found for:", toolId);
+    return;
+  }
+
+  const result = document.createElement("div");
+  result.className = `tool-result ${isError ? "error" : ""}`;
+  result.textContent = content;
+
+  const header = toolBlock.querySelector(".tool-header");
+
+  // Make it collapsible
+  header.onclick = () => {
+    result.classList.toggle("collapsed");
+    const arrow = header.querySelector("span:last-child");
+    arrow.textContent = result.classList.contains("collapsed") ? "▶" : "▼";
+  };
+
+  toolBlock.appendChild(result);
+  currentToolUse = null;
+  scrollToBottom();
+}
+
+// Tool from history (with result already available)
+function addToolFromHistory(entry) {
+  const toolBlock = document.createElement("div");
+  toolBlock.className = "tool-use";
+
+  if (entry.toolName && entry.toolInput) {
+    // Format parameters
+    let paramString = "";
+    if (entry.toolInput && typeof entry.toolInput === "object") {
+      const params = Object.entries(entry.toolInput)
+        .map(([key, value]) => {
+          if (typeof value === "string") {
+            const displayValue = value.length > 50 ? value.substring(0, 50) + "..." : value;
+            return `${key}="${displayValue}"`;
+          }
+          return `${key}=${JSON.stringify(value)}`;
+        })
+        .join(", ");
+      paramString = params ? `(${params})` : "";
+    }
+
+    const header = document.createElement("div");
+    header.className = "tool-header";
+
+    // Add result if available
+    if (entry.toolResult !== undefined) {
+      header.innerHTML = `<span class="tool-name">${entry.toolName}${paramString}</span><span style="margin-left: auto">▼</span>`;
+
+      const result = document.createElement("div");
+      result.className = `tool-result ${entry.toolError ? "error" : ""}`;
+      result.textContent = entry.toolResult;
+
+      // Make it collapsible
+      header.onclick = () => {
+        result.classList.toggle("collapsed");
+        const arrow = header.querySelector("span:last-child");
+        arrow.textContent = result.classList.contains("collapsed") ? "▶" : "▼";
+      };
+
+      toolBlock.appendChild(header);
+      toolBlock.appendChild(result);
+    } else {
+      // No result available
+      header.innerHTML = `<span class="tool-name">${entry.toolName}${paramString}</span>`;
+      toolBlock.appendChild(header);
+    }
+  } else {
+    // Fallback for old format
+    const header = document.createElement("div");
+    header.className = "tool-header";
+    header.innerHTML = `<span class="tool-name">${entry.content}</span>`;
+    toolBlock.appendChild(header);
+  }
+
+  output.appendChild(toolBlock);
+}
+
+// Continue prompt for interrupted tasks
+function showContinuePrompt(task) {
+  const continueDiv = document.createElement("div");
+  continueDiv.className = "message system";
+  continueDiv.style.cssText = "padding: 12px; margin: 12px 0; border-radius: 8px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--accent-color); background: var(--bg-secondary);";
+
+  const icon = document.createElement("span");
+  icon.textContent = "⏸️";
+  icon.style.fontSize = "16px";
+
+  const textSpan = document.createElement("span");
+  textSpan.textContent = "Previous task was interrupted";
+  textSpan.style.flex = "1";
+  textSpan.style.fontSize = "14px";
+  textSpan.style.color = "var(--text-secondary)";
+
+  const continueBtn = document.createElement("button");
+  continueBtn.textContent = "Continue";
+  continueBtn.className = "primary-action";
+  continueBtn.onclick = () => {
+    taskInput.value = "continue";
+    continueDiv.remove();
+    submitBtn.click();
+  };
+
+  const dismissBtn = document.createElement("button");
+  dismissBtn.textContent = "×";
+  dismissBtn.style.cssText = "padding: 4px 8px; font-size: 14px; border-radius: 4px; background: transparent; color: var(--text-tertiary); border: none; cursor: pointer;";
+  dismissBtn.onclick = () => {
+    continueDiv.remove();
+  };
+
+  continueDiv.appendChild(icon);
+  continueDiv.appendChild(textSpan);
+  continueDiv.appendChild(continueBtn);
+  continueDiv.appendChild(dismissBtn);
+
+  output.appendChild(continueDiv);
+  scrollToBottom();
+}
+
+// Processing state
+function setProcessing(processing) {
+  isProcessing = processing;
+
+  if (processing) {
+    submitBtn.style.display = "none";
+    stopBtn.style.display = "flex";
+    taskInput.disabled = true;
+  } else {
+    submitBtn.style.display = "flex";
+    stopBtn.style.display = "none";
+    taskInput.disabled = false;
+    taskInput.focus();
+  }
+}
+
+// Scroll to bottom
+function scrollToBottom() {
+  output.scrollTop = output.scrollHeight;
+}
+
+// Send message
+function sendMessage(type, content = "") {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const message = content ? { type, content } : { type };
+    ws.send(JSON.stringify(message));
+  }
+}
+
+// Submit task
+function submitTask() {
   const task = taskInput.value.trim();
   if (!task || isProcessing) return;
 
-  addLog(`Task: ${task}`, "info");
-  ws.send(JSON.stringify({ type: "task", content: task }));
+  // Check for slash commands
+  if (task === "/clear") {
+    sendMessage("clear_session");
+    taskInput.value = "";
+    return;
+  }
+
+  sendMessage("task", task);
   taskInput.value = "";
-  setProcessing(true);
-};
+  taskInput.style.height = "20px"; // Reset height
+}
 
-statusBtn.onclick = () => {
-  if (isProcessing) return;
-  setProcessing(true);
-  ws.send(JSON.stringify({ type: "git.status" }));
-};
+// Stop task
+function stopTask() {
+  sendMessage("stop_task");
+}
 
-diffBtn.onclick = () => {
-  if (isProcessing) return;
-  setProcessing(true);
-  ws.send(JSON.stringify({ type: "git.diff" }));
-};
+// Auto-resize textarea
+taskInput.addEventListener("input", () => {
+  taskInput.style.height = "20px";
+  taskInput.style.height = Math.min(taskInput.scrollHeight, 200) + "px";
+});
 
-archiveBtn.onclick = () => {
-  if (isProcessing) return;
-  if (confirm("Archive current session and start fresh? The current session will be saved to .sense/archives/")) {
-    output.innerHTML = "";
-    addLog("Archiving session...", "info");
-    ws.send(JSON.stringify({ type: "archive_session" }));
-  }
-};
-
-taskInput.onkeydown = (e) => {
-  if (e.key === "Enter") {
-    // Allow Shift+Enter for new lines, but submit on just Enter
-    if (e.shiftKey) {
-      return; // Let the default behavior happen (new line)
-    }
-
+// Submit on Enter (Shift+Enter for newline)
+taskInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    submitBtn.click();
+    submitTask();
   }
-};
+});
 
-// Auto-reload detection
-let lastClientHash = null;
-async function checkForClientUpdates() {
-  try {
-    const response = await fetch("/client/client.js");
-    const content = await response.text();
-    const hash = simpleHash(content);
-
-    if (lastClientHash === null) {
-      lastClientHash = hash;
-    } else if (lastClientHash !== hash) {
-      addLog("🔄 Client code updated - reloading page in 2 seconds...", "info");
-      setTimeout(() => window.location.reload(), 2000);
-    }
-  } catch (error) {
-    // Ignore errors (server might be restarting)
-  }
-}
-
-function simpleHash(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return hash;
-}
-
-// Check for updates every 5 seconds
-setInterval(checkForClientUpdates, 5000);
+// Button handlers
+submitBtn.addEventListener("click", submitTask);
+stopBtn.addEventListener("click", stopTask);
 
 // Connect on load
 connect();

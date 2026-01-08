@@ -1,5 +1,6 @@
 import { join } from "jsr:@std/path@^1.0.0";
 import { exists } from "jsr:@std/fs@^1.0.0";
+import { log, error } from "./logger.ts";
 
 const SENSE_DIR = join(Deno.cwd(), ".sense");
 const CURRENT_SESSION_PATH = join(SENSE_DIR, "current-session.json");
@@ -17,7 +18,10 @@ export interface SessionData {
   currentTask?: {
     task: string;
     startedAt: string;
-    status: "running" | "completed" | "failed";
+    status: "running" | "completed" | "failed" | "interrupted";
+    interruptionReason?: "max_iterations" | "user_stopped" | "loop_detected" | "server_restart" | "error";
+    iterationCount?: number;
+    canResume?: boolean;
   };
 }
 
@@ -27,7 +31,10 @@ export class PersistentSession {
   private currentTask?: {
     task: string;
     startedAt: string;
-    status: "running" | "completed" | "failed";
+    status: "running" | "completed" | "failed" | "interrupted";
+    interruptionReason?: "max_iterations" | "user_stopped" | "loop_detected" | "server_restart" | "error";
+    iterationCount?: number;
+    canResume?: boolean;
   };
 
   constructor() {
@@ -45,19 +52,29 @@ export class PersistentSession {
         this.currentTask = sessionData.currentTask;
         this.sessionId = sessionData.id;
         await this.updateLastActive();
-        console.log(`Loaded current session with ${this.messages.length} messages`);
+        log(`Loaded current session with ${this.messages.length} messages`);
+
+        // If task status is "running", server restarted mid-task
         if (this.currentTask?.status === "running") {
-          console.log(`⚠️  Session has interrupted task: "${this.currentTask.task}"`);
+          log(`⚠️  Server restarted during task: "${this.currentTask.task}"`);
+          this.currentTask.status = "interrupted";
+          this.currentTask.interruptionReason = "server_restart";
+          this.currentTask.canResume = true;
+          await this.save();
+        }
+
+        if (this.currentTask?.status === "interrupted") {
+          log(`⚠️  Session has interrupted task: "${this.currentTask.task}" (reason: ${this.currentTask.interruptionReason})`);
         }
         return true;
       }
 
       // New session
       await this.save();
-      console.log(`Created new current session`);
+      log(`Created new current session`);
       return false;
-    } catch (error) {
-      console.error(`Failed to load session:`, error);
+    } catch (err) {
+      error(`Failed to load session:`, err);
       return false;
     }
   }
@@ -74,8 +91,8 @@ export class PersistentSession {
 
       await Deno.mkdir(SENSE_DIR, { recursive: true });
       await Deno.writeTextFile(CURRENT_SESSION_PATH, JSON.stringify(sessionData, null, 2));
-    } catch (error) {
-      console.error(`Failed to save session:`, error);
+    } catch (err) {
+      error(`Failed to save session:`, err);
     }
   }
 
@@ -108,7 +125,7 @@ export class PersistentSession {
   addMessage(message: ConversationMessage): void {
     this.messages.push(message);
     // Save immediately to persist
-    this.save().catch(console.error);
+    this.save().catch(error);
   }
 
   getMessages(): ConversationMessage[] {
@@ -123,8 +140,33 @@ export class PersistentSession {
     return this.messages.length;
   }
 
+  // Estimate token count (rough approximation: 1 token ≈ 4 characters)
+  private estimateTokenCount(content: unknown): number {
+    const str = JSON.stringify(content);
+    return Math.ceil(str.length / 4);
+  }
+
+  // Get total estimated token count for session
+  getSessionTokenCount(): number {
+    return this.messages.reduce((total, msg) => {
+      return total + this.estimateTokenCount(msg.content);
+    }, 0);
+  }
+
+  // Get session size info
+  getSessionSizeInfo(): { messageCount: number; estimatedTokens: number; bytes: number } {
+    const bytes = JSON.stringify(this.messages).length;
+    const estimatedTokens = this.getSessionTokenCount();
+    return {
+      messageCount: this.messages.length,
+      estimatedTokens,
+      bytes,
+    };
+  }
+
   async clear(): Promise<void> {
     this.messages = [];
+    this.currentTask = undefined; // Clear interrupted task as well
     await this.save();
   }
 
@@ -132,10 +174,10 @@ export class PersistentSession {
     try {
       if (await exists(CURRENT_SESSION_PATH)) {
         await Deno.remove(CURRENT_SESSION_PATH);
-        console.log(`Deleted current session`);
+        log(`Deleted current session`);
       }
-    } catch (error) {
-      console.error(`Failed to delete session:`, error);
+    } catch (err) {
+      error(`Failed to delete session:`, err);
     }
   }
 
@@ -146,33 +188,51 @@ export class PersistentSession {
       startedAt: new Date().toISOString(),
       status: "running",
     };
-    this.save().catch(console.error);
+    this.save().catch(error);
   }
 
   completeTask(): void {
     if (this.currentTask) {
       this.currentTask.status = "completed";
-      this.save().catch(console.error);
+      this.save().catch(error);
     }
   }
 
   failTask(): void {
     if (this.currentTask) {
       this.currentTask.status = "failed";
-      this.save().catch(console.error);
+      this.save().catch(error);
+    }
+  }
+
+  interruptTask(
+    reason: "max_iterations" | "user_stopped" | "loop_detected" | "server_restart" | "error",
+    iterationCount?: number,
+    canResume: boolean = true
+  ): void {
+    if (this.currentTask) {
+      this.currentTask.status = "interrupted";
+      this.currentTask.interruptionReason = reason;
+      this.currentTask.iterationCount = iterationCount;
+      this.currentTask.canResume = canResume;
+      this.save().catch(error);
     }
   }
 
   getInterruptedTask(): string | null {
-    if (this.currentTask?.status === "running") {
+    if (this.currentTask?.status === "running" || this.currentTask?.status === "interrupted") {
       return this.currentTask.task;
     }
     return null;
   }
 
+  getCurrentTask() {
+    return this.currentTask;
+  }
+
   clearCurrentTask(): void {
     this.currentTask = undefined;
-    this.save().catch(console.error);
+    this.save().catch(error);
   }
 }
 
@@ -189,9 +249,9 @@ export async function archiveCurrentSession(): Promise<void> {
       const data = await Deno.readTextFile(CURRENT_SESSION_PATH);
       await Deno.writeTextFile(archivePath, data);
 
-      console.log(`Archived current session to ${archivePath}`);
+      log(`Archived current session to ${archivePath}`);
     }
-  } catch (error) {
-    console.error("Failed to archive session:", error);
+  } catch (err) {
+    error("Failed to archive session:", err);
   }
 }

@@ -6,6 +6,7 @@
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/path@1": "1.1.4",
     "jsr:@std/path@^1.1.4": "1.1.4",
+    "npm:@anthropic-ai/sdk@0.27": "0.27.3",
     "npm:@anthropic-ai/sdk@0.32": "0.32.1"
   },
   "jsr": {
@@ -30,6 +31,18 @@
     }
   },
   "npm": {
+    "@anthropic-ai/sdk@0.27.3": {
+      "integrity": "sha512-IjLt0gd3L4jlOfilxVXTifn42FnVffMgDC04RJK1KDZpmkBWLv0XC92MVVmkxrFZNS/7l3xWgP/I3nqtX1sQHw==",
+      "dependencies": [
+        "@types/node",
+        "@types/node-fetch",
+        "abort-controller",
+        "agentkeepalive",
+        "form-data-encoder",
+        "formdata-node",
+        "node-fetch"
+      ]
+    },
     "@anthropic-ai/sdk@0.32.1": {
       "integrity": "sha512-U9JwTrDvdQ9iWuABVsMLj8nJVwAyQz6QXvgLsVhryhCEPkLsbcP/MXxm+jYcAwLoV8ESbaTTjnD4kuAFa+Hyjg==",
       "dependencies": [
