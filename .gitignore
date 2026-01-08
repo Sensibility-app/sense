@@ -2,3 +2,6 @@
 .env
 *.log
 node_modules/
+
+# IMPORTANT: hello.md should NEVER be added to .gitignore
+# This file must remain tracked and protected
