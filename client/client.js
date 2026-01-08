@@ -127,6 +127,8 @@ function handleSessionInfo(message) {
         addUserMessage(entry.content);
       } else if (entry.type === "assistant") {
         addAssistantMessage(entry.content);
+      } else if (entry.type === "system") {
+        addSystemMessage(entry.content, "info");
       } else if (entry.type === "tool") {
         addToolFromHistory(entry);
       } else if (entry.type === "thinking") {

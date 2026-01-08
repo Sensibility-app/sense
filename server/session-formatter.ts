@@ -1,7 +1,7 @@
 import type { ConversationMessage } from "./persistent-session.ts";
 
 export interface DisplayMessage {
-  type: "user" | "assistant" | "tool" | "thinking";
+  type: "user" | "assistant" | "tool" | "thinking" | "system";
   content: string;
   timestamp?: string;
   toolName?: string;
@@ -50,6 +50,14 @@ export function formatSessionHistory(messages: ConversationMessage[]): DisplayMe
         displayMessages.push({
           type: "user",
           content: content.trim()
+        });
+      }
+    } else if (message.role === "system") {
+      // System message - display as system message in UI
+      if (typeof message.content === "string") {
+        displayMessages.push({
+          type: "system",
+          content: message.content
         });
       }
     } else if (message.role === "assistant") {

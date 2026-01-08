@@ -72,13 +72,19 @@ export interface MessageChunk {
 
 export async function* executeTaskWithClaude(
   message: string,
-  conversationHistory: Array<{ role: "user" | "assistant"; content: unknown }> = [],
+  conversationHistory: Array<{ role: "user" | "assistant" | "system"; content: unknown }> = [],
   session?: PersistentSession,
   shouldStop?: () => boolean,
   onChunk?: (chunk: MessageChunk) => void,
 ): AsyncGenerator<MessageChunk> {
+  // Filter out system messages - Claude API only accepts user/assistant roles
+  // System messages are kept in session for client display only
+  const filteredHistory = conversationHistory.filter(
+    msg => msg.role === "user" || msg.role === "assistant"
+  ) as Array<{ role: "user" | "assistant"; content: unknown }>;
+
   const messages: Array<{ role: "user" | "assistant"; content: unknown }> = [
-    ...conversationHistory,
+    ...filteredHistory,
     { role: "user", content: message },
   ];
 
