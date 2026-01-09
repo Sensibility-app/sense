@@ -23,6 +23,7 @@ export const SESSION_DIR = ".sense/sessions";
 
 // Task execution
 export const MAX_TASK_ITERATIONS = 25; // Maximum Claude iterations per task
+export const COMMAND_TIMEOUT_MS = 30000; // Command execution timeout (30 seconds)
 
 // Claude API
 export const CLAUDE_MODEL = "claude-sonnet-4-20250514";
