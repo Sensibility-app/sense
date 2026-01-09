@@ -137,10 +137,10 @@ function sendMessage(type, content = "") {
 // Submit task with connection validation
 function submitTask() {
   const task = taskInput.value.trim();
-  if (!task || isProcessing) return;
+  if (!task || state.isProcessing) return;
 
   // Check connection state before sending
-  if (connectionState !== "connected") {
+  if (state.connectionState !== "connected") {
     addSystemMessage("Cannot send task - not connected to server", "error");
     return;
   }
@@ -187,61 +187,12 @@ stopBtn.addEventListener("click", stopTask);
 submitBtn.addEventListener("click", submitTask);
 stopBtn.addEventListener("click", stopTask);
 
-// Mobile-specific connection handling
-function setupMobileConnectionHandling() {
-  // Handle page visibility changes (app backgrounding/foregrounding)
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      console.log('App became visible');
-      // Check connection when app comes back to foreground
-      if (connectionState !== "connected" && ws?.readyState !== WebSocket.OPEN) {
-        console.log('Reconnecting after app became visible');
-        connect();
-      }
-    } else {
-      console.log('App became hidden');
-    }
-  });
-
-  // Handle network status changes
-  window.addEventListener('online', () => {
-    console.log('Network came online');
-    if (connectionState !== "connected") {
-      console.log('Reconnecting after network came online');
-      connect();
-    }
-  });
-
-  window.addEventListener('offline', () => {
-    console.log('Network went offline');
-    // Connection module will handle disconnection
-    disconnect();
-  });
-
-  // Handle focus/blur for additional connection checking
-  window.addEventListener('focus', () => {
-    console.log('Window gained focus');
-    // Small delay to let network settle
-    setTimeout(() => {
-      if (connectionState !== "connected" && navigator.onLine) {
-        console.log('Checking connection after window focus');
-        connect();
-      }
-    }, 100);
-  });
-
-  // Handle beforeunload to close connection cleanly
-  window.addEventListener('beforeunload', () => {
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-      state.ws.close(1000, 'Page unloading');
-    }
-  });
-}
-
-// Initialize mobile optimizations
-setupMobileKeyboardHandling();
-setupMobileTouchHandling();
-setupMobileConnectionHandling();
+// Handle beforeunload to close connection cleanly
+window.addEventListener('beforeunload', () => {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.close(1000, 'Page unloading');
+  }
+});
 
 // Setup UI renderer with DOM elements
 setupUI(output, submitBtn, stopBtn, taskInput, tokenInfo);

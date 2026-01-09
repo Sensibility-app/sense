@@ -13,6 +13,7 @@
   --error-bg: #ffebee;
   --tool-color: #ff9500;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --font-mono: 'SF Mono', Monaco, Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -40,6 +41,11 @@
   box-sizing: border-box;
 }
 
+/* Utility classes */
+.collapsed {
+  display: none;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
   font-size: 15px;
@@ -49,8 +55,6 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 header {
@@ -193,7 +197,7 @@ main {
   background: var(--bg-tertiary);
   padding: 2px 6px;
   border-radius: 4px;
-  font-family: 'SF Mono', Monaco, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
 
@@ -310,11 +314,7 @@ main {
   color: var(--text-secondary);
   border-top: 1px solid var(--border-color);
   white-space: pre-wrap;
-  font-family: 'SF Mono', Monaco, Menlo, Consolas, monospace;
-}
-
-.thinking-content.collapsed {
-  display: none;
+  font-family: var(--font-mono);
 }
 
 .tool-use {
@@ -343,7 +343,7 @@ main {
 }
 
 .tool-name {
-  font-family: 'SF Mono', Monaco, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .tool-result {
@@ -353,13 +353,9 @@ main {
   color: var(--text-secondary);
   border-top: 1px solid var(--border-color);
   white-space: pre-wrap;
-  font-family: 'SF Mono', Monaco, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   max-height: 300px;
   overflow-y: auto;
-}
-
-.tool-result.collapsed {
-  display: none;
 }
 
 .tool-result.error {
@@ -385,7 +381,7 @@ main {
   padding: 16px;
   margin: 12px 0;
   white-space: pre-wrap;
-  font-family: 'SF Mono', Monaco, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.5;
   max-height: 500px;
