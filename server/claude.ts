@@ -1,7 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { TOOLS, executeTool } from "./tools-mcp.ts";
+import { getToolDefinitions, executeTool } from "./tools-loader.ts";
+
+// Load tools
+const TOOLS = await getToolDefinitions();
 import { log as logDebug } from "./logger.ts";
 import type { PersistentSession } from "./persistent-session.ts";
+import { CLAUDE_MODEL } from "./constants.ts";
 
 let client: Anthropic | null = null;
 
@@ -127,7 +131,7 @@ export async function* continueConversation(
 
     // Call Claude with streaming enabled and prompt caching
     const stream = await getClient().messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: CLAUDE_MODEL,
       max_tokens: 4096,
       // System prompt as array with cache_control for caching
       system: [
@@ -157,12 +161,8 @@ export async function* continueConversation(
     
     for await (const chunk of stream) {
       if (chunk.type === "message_start") {
-        // Message started - capture usage information if available
+        // Message started - usage will be captured from message_delta at the end
         logDebug("Message start chunk:", JSON.stringify(chunk, null, 2));
-        if (chunk.message && chunk.message.usage) {
-          currentMessageUsage = chunk.message.usage;
-          logDebug("Captured message usage:", currentMessageUsage);
-        }
         continue;
       } else if (chunk.type === "content_block_start") {
         const block = chunk.content_block;
@@ -291,59 +291,14 @@ export async function* continueConversation(
 
           // NOW check for loop after completing the tool call
           if (callCount > 3) {
-            // Detected a loop - mark task as interrupted
-            if (session) {
-              session.interruptTask("loop_detected", iterationCount, false); // Can't auto-resume loops
-            }
-
-            // Detected a loop - ask Claude to explain
+            // Detected a loop - stop without explanation
+            const toolName = assistantContent[assistantContent.length - 1].type === 'tool_use'
+              ? (assistantContent[assistantContent.length - 1] as any).name
+              : 'unknown';
             yield {
               type: "text_delta",
-              content: `\n\nDetected repeated tool call loop: ${assistantContent[assistantContent.length - 1].type === 'tool_use' ? (assistantContent[assistantContent.length - 1] as any).name : 'unknown'} called ${callCount} times with same arguments.\n\n`,
+              content: `\n\nStopped: Tool '${toolName}' called ${callCount} times with same arguments.\n`,
             } as MessageChunk;
-
-            // Ask Claude to explain what happened
-            messages.push({
-              role: "user",
-              content: `You appear to be stuck in a loop, repeatedly calling the same tool with the same arguments. Before we stop, please briefly explain:
-
-1. What were you trying to accomplish?
-2. Why did you keep calling the same tool?
-3. What information were you looking for that you didn't receive?
-
-Please keep your explanation concise (2-3 sentences).`,
-            });
-
-            // Get Claude's explanation
-            const explanationStream = await getClient().messages.create({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 500,
-              system: SYSTEM_PROMPT,
-              messages: messages as Anthropic.MessageParam[],
-              stream: true,
-            });
-
-            yield {
-              type: "text_delta",
-              content: "**Loop Analysis:**\n",
-            } as MessageChunk;
-
-            let explanationText = "";
-            for await (const chunk of explanationStream) {
-              if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
-                explanationText += chunk.delta.text;
-                yield {
-                  type: "text_delta",
-                  content: chunk.delta.text,
-                } as MessageChunk;
-              }
-            }
-
-            // Save explanation to conversation
-            messages.push({
-              role: "assistant",
-              content: [{ type: "text", text: explanationText }],
-            });
 
             loopDetected = true;
             continueLoop = false;
@@ -404,52 +359,10 @@ Please keep your explanation concise (2-3 sentences).`,
 
     // Safety: prevent infinite loops
     if (iterationCount >= MAX_ITERATIONS) {
-      // Mark task as interrupted (can be resumed)
-      if (session) {
-        session.interruptTask("max_iterations", iterationCount, true);
-      }
-
       yield {
         type: "text_delta",
-        content: `\n\nStopped after ${MAX_ITERATIONS} iterations to prevent infinite loop.\n\n`,
+        content: `\n\nStopped after ${MAX_ITERATIONS} iterations.\n`,
       } as MessageChunk;
-
-      // Ask Claude to explain what it was trying to do
-      messages.push({
-        role: "user",
-        content: `You've reached the maximum iteration limit (${MAX_ITERATIONS}). Please briefly explain what you were trying to accomplish and why it took so many iterations. Keep it concise (2-3 sentences).`,
-      });
-
-      // Get Claude's explanation
-      const explanationStream = await getClient().messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 500,
-        system: SYSTEM_PROMPT,
-        messages: messages as Anthropic.MessageParam[],
-        stream: true,
-      });
-
-      yield {
-        type: "text_delta",
-        content: "**Iteration Limit Analysis:**\n",
-      } as MessageChunk;
-
-      let explanationText = "";
-      for await (const chunk of explanationStream) {
-        if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
-          explanationText += chunk.delta.text;
-          yield {
-            type: "text_delta",
-            content: chunk.delta.text,
-          } as MessageChunk;
-        }
-      }
-
-      // Save explanation to conversation
-      messages.push({
-        role: "assistant",
-        content: [{ type: "text", text: explanationText }],
-      });
     }
   }
 

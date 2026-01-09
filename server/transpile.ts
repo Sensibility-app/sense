@@ -15,6 +15,24 @@ import { crypto } from "jsr:@std/crypto@1.0.3";
 import { encodeHex } from "jsr:@std/encoding@1.0.5/hex";
 import { log, error as logError } from "./logger.ts";
 
+/**
+ * Callback for transpilation events
+ * Called when transpilation completes (fresh or cached)
+ *
+ * Used by:
+ * 1. HTTP handler for on-demand transpilation (when browser requests .js files)
+ * 2. File watcher for proactive transpilation on file changes (edit → transpile → reload)
+ *
+ * @param filepath - Absolute path to TypeScript file that was transpiled
+ * @param fromCache - true if served from cache (no reload), false if fresh (trigger reload)
+ */
+type TranspileCallback = (filepath: string, fromCache: boolean) => void;
+let onTranspileComplete: TranspileCallback | null = null;
+
+export function setTranspileCallback(callback: TranspileCallback | null) {
+  onTranspileComplete = callback;
+}
+
 interface CacheEntry {
   sourceHash: string;
   transpiledCode: string;
@@ -24,40 +42,16 @@ interface CacheEntry {
 /**
  * In-memory cache for transpiled TypeScript code
  */
-class TranspilationCache {
-  private cache = new Map<string, CacheEntry>();
+const cache = new Map<string, CacheEntry>();
 
-  get(filepath: string, sourceHash: string): string | null {
-    const entry = this.cache.get(filepath);
-    if (entry && entry.sourceHash === sourceHash) {
-      return entry.transpiledCode;
-    }
-    return null;
-  }
-
-  set(filepath: string, sourceHash: string, transpiledCode: string): void {
-    this.cache.set(filepath, {
-      sourceHash,
-      transpiledCode,
-      timestamp: Date.now(),
-    });
-  }
-
-  invalidate(filepath: string): void {
-    this.cache.delete(filepath);
-  }
-
-  clear(): void {
-    this.cache.clear();
-  }
-
-  size(): number {
-    return this.cache.size;
-  }
+function getCached(filepath: string, sourceHash: string): string | null {
+  const entry = cache.get(filepath);
+  return (entry && entry.sourceHash === sourceHash) ? entry.transpiledCode : null;
 }
 
-// Global cache instance
-const cache = new TranspilationCache();
+function setCached(filepath: string, sourceHash: string, transpiledCode: string): void {
+  cache.set(filepath, { sourceHash, transpiledCode, timestamp: Date.now() });
+}
 
 /**
  * Calculate SHA-256 hash of source code
@@ -134,9 +128,12 @@ export async function transpileFile(filepath: string): Promise<string> {
     const sourceHash = await hashSource(tsCode);
 
     // Check cache (use absolute path as key)
-    const cached = cache.get(absolutePath, sourceHash);
+    const cached = getCached(absolutePath, sourceHash);
     if (cached) {
       // Cache hit - return immediately
+      if (onTranspileComplete) {
+        onTranspileComplete(filepath, true);
+      }
       return cached;
     }
 
@@ -150,7 +147,12 @@ export async function transpileFile(filepath: string): Promise<string> {
     log(`✅ Transpilation complete (${duration}ms, ${jsCode.length} bytes)`);
 
     // Cache the result
-    cache.set(absolutePath, sourceHash, jsCode);
+    setCached(absolutePath, sourceHash, jsCode);
+
+    // Notify callback about fresh transpilation
+    if (onTranspileComplete) {
+      onTranspileComplete(filepath, false);
+    }
 
     return jsCode;
   } catch (err) {
@@ -164,7 +166,7 @@ export async function transpileFile(filepath: string): Promise<string> {
       : new URL(filepath, `file://${Deno.cwd()}/`).pathname;
 
     // Try to return last cached version (any hash)
-    const entry = (cache as any).cache.get(absolutePath);
+    const entry = cache.get(absolutePath);
     if (entry) {
       logError("⚠️  Serving last known good version from cache");
       return entry.transpiledCode;
@@ -179,7 +181,7 @@ export async function transpileFile(filepath: string): Promise<string> {
  * Invalidate cache for a specific file
  */
 export function invalidateCache(filepath: string): void {
-  cache.invalidate(filepath);
+  cache.delete(filepath);
   log(`🗑️  Transpilation cache invalidated for ${filepath}`);
 }
 
@@ -196,7 +198,7 @@ export function clearCache(): void {
  */
 export function getCacheStats() {
   return {
-    size: cache.size(),
-    files: (cache as any).cache.size,
+    size: cache.size,
+    files: cache.size,
   };
 }

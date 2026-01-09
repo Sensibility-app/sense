@@ -5,14 +5,10 @@
  * use edit_file_range instead for more reliable editing.
  */
 
-import { ToolDefinition, ToolExecutor, ToolPermissions, ToolResult } from "../tools/_shared/types.ts";
-import { sanitizePath, sanitizeErrorMessage } from "../tools/_shared/sanitize.ts";
+import { ToolDefinition, ToolExecutor, ToolResult, withErrorHandling, PERMISSIONS, validateInput } from "../tools/_shared/tool-utils.ts";
+import { sanitizePath } from "../tools/_shared/sanitize.ts";
 
-export const permissions: ToolPermissions = {
-  filesystem: ["read", "write"],
-  network: false,
-  execute: false,
-};
+export const permissions = PERMISSIONS.READ_WRITE;
 
 export const definition: ToolDefinition = {
   name: "edit_file",
@@ -39,65 +35,44 @@ export const definition: ToolDefinition = {
   },
 };
 
-export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
-  // Validate path
-  if (!input.file_path || typeof input.file_path !== "string") {
-    return {
-      content: "file_path is required and must be a string",
-      isError: true,
-    };
-  }
+const executorImpl: ToolExecutor = async (input): Promise<ToolResult> => {
+  // Validate input using shared helper
+  const validationError = validateInput(input, definition.input_schema);
+  if (validationError) return validationError;
 
-  // Validate old_str
-  if (!input.old_str || typeof input.old_str !== "string") {
-    return {
-      content: "old_str is required and must be a string",
-      isError: true,
-    };
-  }
+  // Sanitize path to prevent traversal attacks
+  const path = sanitizePath(input.file_path as string);
 
-  // Validate new_str
-  if (input.new_str === undefined || typeof input.new_str !== "string") {
-    return {
-      content: "new_str is required and must be a string",
-      isError: true,
-    };
-  }
-
+  // Read current file content
+  let content: string;
   try {
-    // Sanitize path to prevent traversal attacks
-    const path = sanitizePath(input.file_path);
-
-    // Read current file content
-    let content: string;
-    try {
-      content = await Deno.readTextFile(path);
-    } catch {
-      return {
-        content: `File ${input.file_path} not found. Use create_file to create new files.`,
-        isError: true,
-      };
-    }
-
-    // Find and replace
-    if (!content.includes(input.old_str)) {
-      return {
-        content: `String not found in ${input.file_path}. Make sure old_str matches exactly (including whitespace). Consider using edit_file_range for more reliable editing.`,
-        isError: true,
-      };
-    }
-
-    const newContent = content.replace(input.old_str, input.new_str);
-    await Deno.writeTextFile(path, newContent);
-
+    content = await Deno.readTextFile(path);
+  } catch {
     return {
-      content: `Successfully edited ${input.file_path}`,
-      isError: false
-    };
-  } catch (error) {
-    return {
-      content: sanitizeErrorMessage(error),
+      content: `File ${input.file_path} not found. Use create_file to create new files.`,
       isError: true,
     };
   }
+
+  // Find and replace
+  const oldStr = input.old_str as string;
+  const newStr = input.new_str as string;
+
+  if (!content.includes(oldStr)) {
+    return {
+      content: `String not found in ${input.file_path}. Make sure old_str matches exactly (including whitespace). Consider using edit_file_range for more reliable editing.`,
+      isError: true,
+    };
+  }
+
+  const newContent = content.replace(oldStr, newStr);
+  await Deno.writeTextFile(path, newContent);
+
+  return {
+    content: `Successfully edited ${input.file_path}`,
+    isError: false
+  };
 };
+
+// Wrap executor with automatic error handling
+export const executor: ToolExecutor = withErrorHandling(executorImpl);

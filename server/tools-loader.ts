@@ -14,7 +14,7 @@
  */
 
 import { join, basename } from "jsr:@std/path@^1.0.0";
-import { ToolModule, ToolDefinition, ToolExecutor, ToolPermissions, validateToolModule, ToolResult } from "./tools/_shared/types.ts";
+import { ToolModule, ToolDefinition, ToolExecutor, ToolPermissions, validateToolModule, ToolResult } from "./tools/_shared/tool-utils.ts";
 import { log, error as logError } from "./logger.ts";
 
 const TOOLS_DIR = join(Deno.cwd(), "server", "tools");

@@ -6,14 +6,10 @@
  */
 
 import { dirname } from "jsr:@std/path@^1.0.0";
-import { ToolDefinition, ToolExecutor, ToolPermissions, ToolResult } from "../tools/_shared/types.ts";
-import { sanitizePath, sanitizeErrorMessage } from "../tools/_shared/sanitize.ts";
+import { ToolDefinition, ToolExecutor, ToolResult, withErrorHandling, PERMISSIONS, validateInput } from "../tools/_shared/tool-utils.ts";
+import { sanitizePath } from "../tools/_shared/sanitize.ts";
 
-export const permissions: ToolPermissions = {
-  filesystem: ["write"],
-  network: false,
-  execute: false,
-};
+export const permissions = PERMISSIONS.WRITE_ONLY;
 
 export const definition: ToolDefinition = {
   name: "create_file",
@@ -36,49 +32,33 @@ export const definition: ToolDefinition = {
   },
 };
 
-export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
-  // Validate path
-  if (!input.file_path || typeof input.file_path !== "string") {
-    return {
-      content: "file_path is required and must be a string",
-      isError: true,
-    };
-  }
+const executorImpl: ToolExecutor = async (input): Promise<ToolResult> => {
+  // Validate input using shared helper
+  const validationError = validateInput(input, definition.input_schema);
+  if (validationError) return validationError;
 
-  // Validate content
-  if (input.file_contents === undefined || typeof input.file_contents !== "string") {
-    return {
-      content: "file_contents is required and must be a string",
-      isError: true,
-    };
-  }
+  // Sanitize path to prevent traversal attacks
+  const path = sanitizePath(input.file_path as string);
 
+  // Check if file already exists
   try {
-    // Sanitize path to prevent traversal attacks
-    const path = sanitizePath(input.file_path);
-
-    // Check if file already exists
-    try {
-      await Deno.stat(path);
-      return {
-        content: `File ${input.file_path} already exists. Use edit_file_range or edit_file to modify existing files.`,
-        isError: true,
-      };
-    } catch {
-      // File doesn't exist, we can create it
-    }
-
-    // Create parent directories if needed
-    await Deno.mkdir(dirname(path), { recursive: true });
-
-    // Write file
-    await Deno.writeTextFile(path, input.file_contents);
-
-    return { content: `Successfully created ${input.file_path}`, isError: false };
-  } catch (error) {
+    await Deno.stat(path);
     return {
-      content: sanitizeErrorMessage(error),
+      content: `File ${input.file_path} already exists. Use edit_file_range or edit_file to modify existing files.`,
       isError: true,
     };
+  } catch {
+    // File doesn't exist, we can create it
   }
+
+  // Create parent directories if needed
+  await Deno.mkdir(dirname(path), { recursive: true });
+
+  // Write file
+  await Deno.writeTextFile(path, input.file_contents as string);
+
+  return { content: `Successfully created ${input.file_path}`, isError: false };
 };
+
+// Wrap executor with automatic error handling
+export const executor: ToolExecutor = withErrorHandling(executorImpl);

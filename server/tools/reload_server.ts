@@ -6,14 +6,10 @@
  */
 
 import { join } from "jsr:@std/path@^1.0.0";
-import { ToolDefinition, ToolExecutor, ToolPermissions, ToolResult } from "../tools/_shared/types.ts";
-import { getBaseDir, sanitizeErrorMessage } from "../tools/_shared/sanitize.ts";
+import { ToolDefinition, ToolExecutor, ToolResult, withErrorHandling, PERMISSIONS, validateInput } from "../tools/_shared/tool-utils.ts";
+import { getBaseDir } from "../tools/_shared/sanitize.ts";
 
-export const permissions: ToolPermissions = {
-  filesystem: ["read", "write"],
-  network: false,
-  execute: false,
-};
+export const permissions = PERMISSIONS.READ_WRITE;
 
 export const definition: ToolDefinition = {
   name: "reload_server",
@@ -27,26 +23,26 @@ export const definition: ToolDefinition = {
   },
 };
 
-export const executor: ToolExecutor = async (_input): Promise<ToolResult> => {
-  try {
-    // Touch main.ts to trigger Deno's watch mode reload
-    const mainPath = join(getBaseDir(), "server", "main.ts");
+const executorImpl: ToolExecutor = async (input): Promise<ToolResult> => {
+  // Validate input using shared helper (no required fields, but validates schema)
+  const validationError = validateInput(input, definition.input_schema);
+  if (validationError) return validationError;
 
-    // Verify file exists
-    await Deno.stat(mainPath);
+  // Touch main.ts to trigger Deno's watch mode reload
+  const mainPath = join(getBaseDir(), "server", "main.ts");
 
-    // Update the file's access and modification times to trigger reload
-    const now = new Date();
-    await Deno.utime(mainPath, now, now);
+  // Verify file exists
+  await Deno.stat(mainPath);
 
-    return {
-      content: "Server reload triggered. The server will restart in watch mode and apply all code changes. This may take a few seconds.",
-      isError: false,
-    };
-  } catch (error) {
-    return {
-      content: `Failed to trigger reload: ${sanitizeErrorMessage(error)}`,
-      isError: true,
-    };
-  }
+  // Update the file's access and modification times to trigger reload
+  const now = new Date();
+  await Deno.utime(mainPath, now, now);
+
+  return {
+    content: "Server reload triggered. The server will restart and automatically resume this task with full context.",
+    isError: false,
+  };
 };
+
+// Wrap executor with automatic error handling
+export const executor: ToolExecutor = withErrorHandling(executorImpl);

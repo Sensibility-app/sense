@@ -5,14 +5,9 @@
  * by Deno's permission system (server already runs with restricted permissions).
  */
 
-import { ToolDefinition, ToolExecutor, ToolPermissions, ToolResult } from "../tools/_shared/types.ts";
-import { sanitizeErrorMessage } from "../tools/_shared/sanitize.ts";
+import { ToolDefinition, ToolExecutor, ToolResult, withErrorHandling, PERMISSIONS, validateInput } from "../tools/_shared/tool-utils.ts";
 
-export const permissions: ToolPermissions = {
-  filesystem: ["read", "write"],
-  network: false,
-  execute: true,
-};
+export const permissions = PERMISSIONS.EXECUTE;
 
 export const definition: ToolDefinition = {
   name: "eval",
@@ -31,44 +26,37 @@ export const definition: ToolDefinition = {
   },
 };
 
-export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
-  if (!input.code || typeof input.code !== "string") {
-    return {
-      content: "code is required and must be a string",
-      isError: true,
-    };
-  }
+const executorImpl: ToolExecutor = async (input): Promise<ToolResult> => {
+  // Validate input using shared helper
+  const validationError = validateInput(input, definition.input_schema);
+  if (validationError) return validationError;
 
-  try {
-    // Create async function from code
-    const asyncFn = new Function("Deno", `
-      return (async () => {
-        ${input.code}
-      })();
-    `);
+  // Create async function from code
+  const asyncFn = new Function("Deno", `
+    return (async () => {
+      ${input.code}
+    })();
+  `);
 
-    // Execute with timeout (10 seconds)
-    const timeoutMs = 10000;
-    const result = await Promise.race([
-      asyncFn(Deno),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Execution timeout (10s)")), timeoutMs)
-      ),
-    ]);
+  // Execute with timeout (10 seconds)
+  const timeoutMs = 10000;
+  const result = await Promise.race([
+    asyncFn(Deno),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Execution timeout (10s)")), timeoutMs)
+    ),
+  ]);
 
-    // Format result
-    const output = result !== undefined 
-      ? (typeof result === "string" ? result : JSON.stringify(result, null, 2))
-      : "Code executed successfully (no return value)";
+  // Format result
+  const output = result !== undefined
+    ? (typeof result === "string" ? result : JSON.stringify(result, null, 2))
+    : "Code executed successfully (no return value)";
 
-    return {
-      content: output,
-      isError: false,
-    };
-  } catch (error) {
-    return {
-      content: sanitizeErrorMessage(error),
-      isError: true,
-    };
-  }
+  return {
+    content: output,
+    isError: false,
+  };
 };
+
+// Wrap executor with automatic error handling
+export const executor: ToolExecutor = withErrorHandling(executorImpl);

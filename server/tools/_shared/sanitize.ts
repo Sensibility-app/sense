@@ -43,6 +43,30 @@ export function getBaseDir(): string {
 }
 
 /**
+ * Resolve a search path relative to the project root
+ * Handles both absolute paths (starting with /) and relative paths
+ *
+ * @param path - Optional path relative to project root (e.g., '/server', 'client', or '/')
+ * @returns Absolute filesystem path
+ *
+ * @example
+ * resolveSearchPath() // returns project root
+ * resolveSearchPath('/') // returns project root
+ * resolveSearchPath('/server') // returns /absolute/path/to/project/server
+ * resolveSearchPath('client') // returns /absolute/path/to/project/client
+ */
+export function resolveSearchPath(path?: string): string {
+  if (!path || path === '/') {
+    return BASE_DIR;
+  }
+
+  // Strip leading slashes and ./ prefix to normalize
+  const normalizedPath = path.replace(/^\/+/, '').replace(/^\.\//, '');
+
+  return normalizedPath ? `${BASE_DIR}/${normalizedPath}` : BASE_DIR;
+}
+
+/**
  * Sanitize error messages to prevent filesystem path leakage
  * Replaces absolute filesystem paths with project-relative paths
  *

@@ -9,59 +9,36 @@ await Deno.mkdir(SENSE_DIR, { recursive: true });
 // Create or clear log file on startup
 await Deno.writeTextFile(LOG_FILE, `=== Server started at ${new Date().toISOString()} ===\n`);
 
-export function log(...args: unknown[]): void {
+/**
+ * Common logging helper - formats message and writes to file
+ */
+function _writeLog(prefix: string, consoleMethod: (...args: unknown[]) => void, args: unknown[]): void {
   const timestamp = new Date().toISOString();
   const message = args.map(arg =>
     typeof arg === "object" ? JSON.stringify(arg, null, 2) : String(arg)
   ).join(" ");
 
-  const logLine = `[${timestamp}] ${message}\n`;
+  const logLine = `[${timestamp}]${prefix ? ` ${prefix}:` : ''} ${message}\n`;
 
   // Write to console
-  console.log(...args);
+  consoleMethod(...args);
 
-  // Write to file (async, non-blocking)
-  Deno.writeTextFile(LOG_FILE, logLine, { append: true }).catch(() => {
-    // Ignore file write errors
-  });
+  // Write to file (async, non-blocking, ignore errors)
+  Deno.writeTextFile(LOG_FILE, logLine, { append: true }).catch(() => {});
+}
+
+export function log(...args: unknown[]): void {
+  _writeLog("", console.log, args);
 }
 
 export function error(...args: unknown[]): void {
-  const timestamp = new Date().toISOString();
-  const message = args.map(arg =>
-    typeof arg === "object" ? JSON.stringify(arg, null, 2) : String(arg)
-  ).join(" ");
-
-  const logLine = `[${timestamp}] ERROR: ${message}\n`;
-
-  // Write to console
-  console.error(...args);
-
-  // Write to file (async, non-blocking)
-  Deno.writeTextFile(LOG_FILE, logLine, { append: true }).catch(() => {
-    // Ignore file write errors
-  });
+  _writeLog("ERROR", console.error, args);
 }
 
 export function logDebug(...args: unknown[]): void {
   // Only log debug messages in development mode
-  const isDevelopment = Deno.env.get("DENO_ENV") !== "production";
-
-  if (isDevelopment) {
-    const timestamp = new Date().toISOString();
-    const message = args.map(arg =>
-      typeof arg === "object" ? JSON.stringify(arg, null, 2) : String(arg)
-    ).join(" ");
-
-    const logLine = `[${timestamp}] DEBUG: ${message}\n`;
-
-    // Write to console only (don't clutter log file)
-    console.log(`[DEBUG]`, ...args);
-
-    // Optionally write to file
-    Deno.writeTextFile(LOG_FILE, logLine, { append: true }).catch(() => {
-      // Ignore file write errors
-    });
+  if (Deno.env.get("DENO_ENV") !== "production") {
+    _writeLog("DEBUG", console.log, args);
   }
 }
 
