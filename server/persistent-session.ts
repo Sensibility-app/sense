@@ -252,13 +252,6 @@ export class PersistentSession {
     }
   }
 
-  getInterruptedTask(): string | null {
-    if (this.currentTask?.status === "running" || this.currentTask?.status === "interrupted") {
-      return this.currentTask.task;
-    }
-    return null;
-  }
-
   getCurrentTask() {
     return this.currentTask;
   }

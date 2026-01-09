@@ -183,7 +183,6 @@ function handleWebSocket(socket: WebSocket) {
 
   // Function to send initial session info
   function sendSessionInfo() {
-    const interruptedTask = globalSession.getInterruptedTask();
     const messages = globalSession.getMessages();
     const tokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
     const sizeInfo = globalSession.getSessionSizeInfo();
@@ -203,8 +202,6 @@ function handleWebSocket(socket: WebSocket) {
         estimatedTokens: sizeInfo.estimatedTokens,
         bytes: sizeInfo.bytes,
       },
-      // Only show interrupted task if there's no active task currently running
-      ...(!hasActiveTask && interruptedTask && { interruptedTask }),
     });
 
     // Only send reconnection messages if we have an existing session
@@ -212,10 +209,10 @@ function handleWebSocket(socket: WebSocket) {
       // Check if this connection is happening soon after server start (likely server restart)
       const timeSinceServerStart = Date.now() - serverStartTime;
       const isLikelyServerRestart = timeSinceServerStart < 10000; // Within 10 seconds of server start
-      
+
       // Check if there was a task interrupted by server restart
       const task = globalSession.getCurrentTask();
-      const wasTaskInterruptedByRestart = !hasActiveTask && interruptedTask && task && task.interruptionReason === "server_restart";
+      const wasTaskInterruptedByRestart = !hasActiveTask && task && task.status === "interrupted" && task.interruptionReason === "server_restart";
       
       // connectedClients.size includes this current connection, so check for <= 1 for first client
       if (isLikelyServerRestart && connectedClients.size <= 1) {
@@ -260,15 +257,15 @@ function handleWebSocket(socket: WebSocket) {
         
         sendToClient({
           type: "system",
-          content: "Client reconnected", 
+          content: "Client reconnected",
           level: "info",
         });
-        
+
         // If there's an interrupted task, provide continue instruction
-        if (!hasActiveTask && interruptedTask) {
+        if (!hasActiveTask && task && task.status === "interrupted") {
           sendToClient({
             type: "system",
-            content: `Type "continue" to resume interrupted task`,
+            content: `Type "continue" to resume`,
             level: "info",
           });
         }
@@ -466,26 +463,22 @@ function handleWebSocket(socket: WebSocket) {
         }
 
         // Check if user wants to continue an interrupted task
-        const isContinueRequest = message.content.trim().toLowerCase() === "continue";
-        const interruptedTask = globalSession.getInterruptedTask();
         const currentTaskInfo = globalSession.getCurrentTask();
-
-        let taskMessage = message.content;
-        if (isContinueRequest && interruptedTask && currentTaskInfo?.canResume) {
-          // Transform "continue" into a context-aware continuation request
+        if (currentTaskInfo?.status === "interrupted" && currentTaskInfo.canResume) {
           const reasonText = currentTaskInfo.interruptionReason === "max_iterations"
-            ? `You reached the iteration limit (${currentTaskInfo.iterationCount}/25) while working on this`
+            ? "iteration limit"
             : currentTaskInfo.interruptionReason === "server_restart"
-            ? "The server restarted while you were working on this"
-            : "The task was interrupted";
+            ? "server restart"
+            : "interruption";
 
-          taskMessage = `Continue the interrupted task: "${interruptedTask}". ${reasonText}. Please continue from where you left off.`;
+          log(`Resuming interrupted task after ${reasonText}`);
 
-          log(`Continuing interrupted task: ${interruptedTask}`);
-
-          // Clear the interrupted status since we're resuming
+          // Clear the interrupted status - conversation history provides context
           globalSession.clearCurrentTask();
         }
+
+        // Use message as-is - Claude has full conversation history for context
+        let taskMessage = message.content;
 
         const startTime = Date.now();
         const taskId = `task_${startTime}_${Math.random().toString(36).substr(2, 9)}`;
@@ -501,10 +494,10 @@ function handleWebSocket(socket: WebSocket) {
           content: taskMessage
         });
         
-        // Send user message to chat (show original if "continue", otherwise show taskMessage)
+        // Send user message to chat
         broadcast({
           type: "user_message",
-          content: isContinueRequest && interruptedTask ? `continue` : taskMessage
+          content: taskMessage
         });
 
         // Update processing status (header)
