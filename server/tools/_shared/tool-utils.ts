@@ -151,6 +151,34 @@ export function withErrorHandling(executor: ToolExecutor): ToolExecutor {
   };
 }
 
+/**
+ * Create a tool module with automatic error handling and validation
+ * Reduces boilerplate in individual tool files by wrapping executor with validation and error handling
+ */
+export function createTool(
+  definition: ToolDefinition,
+  permissions: ToolPermissions,
+  executor: ToolExecutor,
+  metadata?: { author?: string; version?: string; tags?: string[] }
+): ToolModule {
+  // Wrap executor with validation and error handling
+  const wrappedExecutor: ToolExecutor = async (input) => {
+    // Auto-validate input against schema
+    const validationError = validateInput(input, definition.input_schema);
+    if (validationError) return validationError;
+
+    // Execute with error handling
+    return withErrorHandling(executor)(input);
+  };
+
+  return {
+    definition,
+    permissions,
+    executor: wrappedExecutor,
+    metadata
+  };
+}
+
 // =============================================================================
 // VALIDATION
 // =============================================================================

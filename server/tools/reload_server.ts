@@ -6,43 +6,36 @@
  */
 
 import { join } from "jsr:@std/path@^1.0.0";
-import { ToolDefinition, ToolExecutor, ToolResult, withErrorHandling, PERMISSIONS, validateInput } from "../tools/_shared/tool-utils.ts";
+import { createTool, PERMISSIONS, ToolResult } from "../tools/_shared/tool-utils.ts";
 import { getBaseDir } from "../tools/_shared/sanitize.ts";
 
-export const permissions = PERMISSIONS.READ_WRITE;
-
-export const definition: ToolDefinition = {
-  name: "reload_server",
-  description: "Trigger a server reload to apply code changes immediately. The server will restart in watch mode and pick up all modifications to server files. Useful after creating new tools or modifying server code.",
-  input_schema: {
-    $schema: "http://json-schema.org/draft-07/schema#",
-    type: "object",
-    properties: {},
-    required: [],
-    additionalProperties: false,
+export const { definition, permissions, executor } = createTool(
+  {
+    name: "reload_server",
+    description: "Trigger a server reload to apply code changes immediately. The server will restart in watch mode and pick up all modifications to server files. Useful after creating new tools or modifying server code.",
+    input_schema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
   },
-};
+  PERMISSIONS.READ_WRITE,
+  async (input): Promise<ToolResult> => {
+    // Touch main.ts to trigger Deno's watch mode reload
+    const mainPath = join(getBaseDir(), "server", "main.ts");
 
-const executorImpl: ToolExecutor = async (input): Promise<ToolResult> => {
-  // Validate input using shared helper (no required fields, but validates schema)
-  const validationError = validateInput(input, definition.input_schema);
-  if (validationError) return validationError;
+    // Verify file exists
+    await Deno.stat(mainPath);
 
-  // Touch main.ts to trigger Deno's watch mode reload
-  const mainPath = join(getBaseDir(), "server", "main.ts");
+    // Update the file's access and modification times to trigger reload
+    const now = new Date();
+    await Deno.utime(mainPath, now, now);
 
-  // Verify file exists
-  await Deno.stat(mainPath);
-
-  // Update the file's access and modification times to trigger reload
-  const now = new Date();
-  await Deno.utime(mainPath, now, now);
-
-  return {
-    content: "Server reload triggered. The server will restart and automatically resume this task with full context.",
-    isError: false,
-  };
-};
-
-// Wrap executor with automatic error handling
-export const executor: ToolExecutor = withErrorHandling(executorImpl);
+    return {
+      content: "Server reload triggered. The server will restart and automatically resume this task with full context.",
+      isError: false,
+    };
+  }
+);

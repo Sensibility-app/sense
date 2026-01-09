@@ -5,75 +5,68 @@
  * Returns file paths sorted by modification time.
  */
 
-import { ToolDefinition, ToolExecutor, ToolResult, withErrorHandling, PERMISSIONS, validateInput } from "../tools/_shared/tool-utils.ts";
+import { createTool, PERMISSIONS, ToolResult } from "../tools/_shared/tool-utils.ts";
 import { getBaseDir, resolveSearchPath } from "../tools/_shared/sanitize.ts";
 import { expandGlob } from "jsr:@std/fs@1.0.21/expand-glob";
 import { relative } from "jsr:@std/path@1.1.4/relative";
 
-export const permissions = PERMISSIONS.READ_ONLY;
-
-export const definition: ToolDefinition = {
-  name: "glob",
-  description: "Find files matching glob patterns. Supports *.ts, **/*.js, etc. Returns paths sorted by modification time.",
-  input_schema: {
-    $schema: "http://json-schema.org/draft-07/schema#",
-    type: "object",
-    properties: {
-      pattern: {
-        type: "string",
-        description: "Glob pattern to match (e.g., '*.ts', '**/*.js', 'server/**/*.ts')"
+export const { definition, permissions, executor } = createTool(
+  {
+    name: "glob",
+    description: "Find files matching glob patterns. Supports *.ts, **/*.js, etc. Returns paths sorted by modification time.",
+    input_schema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      properties: {
+        pattern: {
+          type: "string",
+          description: "Glob pattern to match (e.g., '*.ts', '**/*.js', 'server/**/*.ts')"
+        },
+        path: {
+          type: "string",
+          description: "Optional: Base directory to search from (default: project root '/'. Example: '/server')"
+        },
       },
-      path: {
-        type: "string",
-        description: "Optional: Base directory to search from (default: project root '/'. Example: '/server')"
-      },
+      required: ["pattern"],
+      additionalProperties: false,
     },
-    required: ["pattern"],
-    additionalProperties: false,
   },
-};
+  PERMISSIONS.READ_ONLY,
+  async (input): Promise<ToolResult> => {
+    const baseDir = getBaseDir();
+    const searchPath = resolveSearchPath(input.path as string | undefined);
 
-const executorImpl: ToolExecutor = async (input): Promise<ToolResult> => {
-  // Validate input using shared helper
-  const validationError = validateInput(input, definition.input_schema);
-  if (validationError) return validationError;
+    const matches: Array<{ path: string; mtime: number }> = [];
 
-  const baseDir = getBaseDir();
-  const searchPath = resolveSearchPath(input.path as string | undefined);
+    for await (const entry of expandGlob(input.pattern as string, {
+      root: searchPath,
+      includeDirs: false,
+      globstar: true,
+    })) {
+      const stat = await Deno.stat(entry.path);
+      const relativePath = relative(baseDir, entry.path);
 
-  const matches: Array<{ path: string; mtime: number }> = [];
+      matches.push({
+        path: "/" + relativePath,
+        mtime: stat.mtime?.getTime() || 0,
+      });
+    }
 
-  for await (const entry of expandGlob(input.pattern as string, {
-    root: searchPath,
-    includeDirs: false,
-    globstar: true,
-  })) {
-    const stat = await Deno.stat(entry.path);
-    const relativePath = relative(baseDir, entry.path);
+    matches.sort((a, b) => b.mtime - a.mtime);
 
-    matches.push({
-      path: "/" + relativePath,
-      mtime: stat.mtime?.getTime() || 0,
-    });
-  }
+    if (matches.length === 0) {
+      return {
+        content: "No files found matching pattern: " + input.pattern,
+        isError: false,
+      };
+    }
 
-  matches.sort((a, b) => b.mtime - a.mtime);
+    const paths = matches.map(m => m.path).join("\n");
+    const summary = "Found " + matches.length + " file" + (matches.length === 1 ? '' : 's') + " matching '" + input.pattern + "':\n" + paths;
 
-  if (matches.length === 0) {
     return {
-      content: "No files found matching pattern: " + input.pattern,
+      content: summary,
       isError: false,
     };
   }
-
-  const paths = matches.map(m => m.path).join("\n");
-  const summary = "Found " + matches.length + " file" + (matches.length === 1 ? '' : 's') + " matching '" + input.pattern + "':\n" + paths;
-
-  return {
-    content: summary,
-    isError: false,
-  };
-};
-
-// Wrap executor with automatic error handling
-export const executor: ToolExecutor = withErrorHandling(executorImpl);
+);
