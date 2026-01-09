@@ -218,17 +218,36 @@ function handleWebSocket(socket: WebSocket) {
       if (isLikelyServerRestart && connectedClients.size <= 1) {
         // Server restart - show single consolidated message
           if (wasTaskInterruptedByRestart) {
-             // Task was interrupted by server restart - store and send system message
+             // Task was interrupted by server restart - auto-resume
              globalSession.addMessage({
                role: "system",
                content: "Server restarted during task"
              });
-             
+
              sendToClient({
                type: "system",
-               content: `Type "continue" to resume interrupted task`,
+               content: "Resuming interrupted task...",
                level: "info",
              });
+
+             // Auto-resume: Get last user message and re-execute with full conversation history
+             const messages = globalSession.getMessages();
+             const lastUserMessage = messages.filter(m => m.role === "user").slice(-1)[0];
+
+             if (lastUserMessage && typeof lastUserMessage.content === "string") {
+               // Clear interrupted status
+               globalSession.clearCurrentTask();
+
+               // Trigger task execution by simulating message from client
+               setTimeout(() => {
+                 const resumeMessage = {
+                   type: "message",
+                   content: lastUserMessage.content
+                 };
+                 // Process the message through the normal message handler
+                 socket.onmessage?.({ data: JSON.stringify(resumeMessage) } as MessageEvent);
+               }, 100); // Small delay to ensure UI is ready
+             }
          } else {
            // Server restart without interrupted task
            globalSession.addMessage({
