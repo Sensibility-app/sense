@@ -183,9 +183,6 @@ taskInput.addEventListener("keydown", (e) => {
 // Button handlers
 submitBtn.addEventListener("click", submitTask);
 stopBtn.addEventListener("click", stopTask);
-// Button handlers
-submitBtn.addEventListener("click", submitTask);
-stopBtn.addEventListener("click", stopTask);
 
 // Handle beforeunload to close connection cleanly
 window.addEventListener('beforeunload', () => {

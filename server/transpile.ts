@@ -115,12 +115,11 @@ async function collectModuleSources(
   try {
     // Read the file
     const source = await Deno.readTextFile(entryPoint);
-    sources.set(entryPoint, source);
 
     // Extract imports from this file
     const imports = extractImports(source, entryPoint);
 
-    // Recursively collect imported modules
+    // Recursively collect imported modules (dependencies first)
     for (const importPath of imports) {
       const importedSources = await collectModuleSources(importPath, visited);
       // Merge imported sources (dependencies first)
@@ -128,6 +127,9 @@ async function collectModuleSources(
         sources.set(path, src);
       }
     }
+
+    // Add current file AFTER its dependencies
+    sources.set(entryPoint, source);
   } catch (err) {
     logError(`Failed to read module ${entryPoint}:`, err);
     throw new Error(`Module not found: ${entryPoint}`);
