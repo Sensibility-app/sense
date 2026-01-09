@@ -27,6 +27,8 @@ const taskInput = document.getElementById("taskInput");
 const submitBtn = document.getElementById("submitBtn");
 const stopBtn = document.getElementById("stopBtn");
 
+console.log("[client.ts] DOM elements:", { output, statusEl, tokenInfo, taskInput, submitBtn, stopBtn });
+
 // Handle all incoming messages from server
 function handleMessage(message) {
   switch (message.type) {
@@ -192,10 +194,13 @@ window.addEventListener('beforeunload', () => {
 });
 
 // Setup UI renderer with DOM elements
+console.log("[client.ts] About to call setupUI");
 setupUI(output, submitBtn, stopBtn, taskInput, tokenInfo);
 
 // Setup connection module with required dependencies
+console.log("[client.ts] About to call setupConnection with statusEl:", statusEl);
 setupConnection(handleMessage, setProcessing, statusEl);
 
 // Connect on load
+console.log("[client.ts] About to call connect()");
 connect();
