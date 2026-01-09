@@ -2,7 +2,9 @@ import { load } from "jsr:@std/dotenv@^0.225.0";
 import { continueConversation } from "./claude.ts";
 import { PersistentSession, archiveCurrentSession, formatSessionHistory, getLastUserMessage, type DisplayMessage } from "./persistent-session.ts";
 import { log, error } from "./logger.ts";
-import { transpileFile, setTranspileCallback } from "./transpile.ts";
+import { setTranspileCallback } from "./transpile.ts";
+import { type ClientMessage, type ServerMessage, formatTokenUsage } from "./server-types.ts";
+import { serveStaticFile } from "./file-server.ts";
 // === Agent execution context ===
 type BroadcastFn = (message: any) => void;
 
@@ -216,50 +218,6 @@ if (globalSession.needsResume()) {
   })();
 }
 
-type ClientMessage =
-  | { type: "task"; content: string }
-  | { type: "stop_task" }
-  | { type: "archive_session" }
-  | { type: "clear_session" }
-  | { type: "git.status" }
-  | { type: "git.diff" }
-  | { type: "ping" };
-
-type ServerMessage =
-  // State updates (header only)
-  | { type: "session_info"; messageCount: number; interruptedTask?: string; history: DisplayMessage[]; tokenUsage: { inputTokens: number; outputTokens: number; totalTokens: number }; isTaskRunning?: boolean; contextSize?: { estimatedTokens: number; bytes: number } }
-  | { type: "connection_status"; status: "connected" | "disconnected"; message?: string }
-  | { type: "processing_status"; isProcessing: boolean; message?: string }
-  | { type: "token_usage"; usage: { inputTokens: number; outputTokens: number; totalTokens: number }; formatted: string }
-
-  // Conversation messages (chat display)
-  | { type: "user_message"; content: string }
-  | { type: "assistant_response"; content?: string; streaming?: boolean }
-  | { type: "text_delta"; content: string }
-  | { type: "thinking"; content: string }
-
-  // Tool use messages
-  | { type: "tool_use"; toolName: string; toolId: string; toolInput?: unknown }
-  | { type: "tool_result"; toolId: string; content: string; isError: boolean }
-
-  // System messages (small, minimal in chat)
-  | { type: "system"; content: string; level?: "info" | "error" | "success" }
-  | { type: "tool_activity"; toolName: string; status: "started" | "completed" | "error"; preview?: string; toolId?: string }
-  
-  // Task lifecycle
-  | { type: "task_complete"; summary: string }
-  
-  // Heartbeat
-  | { type: "pong" }
-  
-  // Hot reload
-  | { type: "reload_page"; reason: string };
-
-// Helper function to format token usage
-function formatTokenUsage(usage: { inputTokens: number; outputTokens: number; totalTokens: number }): string {
-  return `${usage.totalTokens.toLocaleString()} tokens (${usage.inputTokens.toLocaleString()} in, ${usage.outputTokens.toLocaleString()} out)`;
-}
-
 const PORT = 8080;
 
 // File watcher for hot reload
@@ -432,62 +390,6 @@ function handleSlashCommand(command: string): { handled: boolean; type?: string 
   }
   
   return { handled: false };
-}
-// Serve static files from client directory
-async function serveFile(path: string): Promise<Response> {
-  try {
-    const ext = path.split(".").pop();
-    const contentType = ext === "html"
-      ? "text/html"
-      : ext === "js"
-      ? "text/javascript"
-      : ext === "css"
-      ? "text/css"
-      : ext === "json"
-      ? "application/json"
-      : ext === "png"
-      ? "image/png"
-      : ext === "jpg" || ext === "jpeg"
-      ? "image/jpeg"
-      : ext === "svg"
-      ? "image/svg+xml"
-      : ext === "ico"
-      ? "image/x-icon"
-      : "text/plain";
-
-    // For HTML files: rewrite .ts script references to .js
-    if (ext === "html") {
-      const html = await Deno.readTextFile(path);
-      // Replace <script ... src="/client/something.ts"> with .js
-      // Matches: <script ... src="path.ts"> and replaces .ts with .js
-      const rewritten = html.replace(
-        /(<script[^>]+src=["'])([^"']+)\.ts(["'][^>]*>)/g,
-        '$1$2.js$3'
-      );
-
-      return new Response(rewritten, {
-        headers: {
-          "Content-Type": contentType,
-          "Cache-Control": "no-cache, no-store, must-revalidate", // Always fresh in dev
-          "Pragma": "no-cache",
-          "Expires": "0"
-        },
-      });
-    }
-
-    // For other files: serve as-is with no-cache headers in dev
-    const file = await Deno.readFile(path);
-    return new Response(file, {
-      headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "no-cache, no-store, must-revalidate", // Always fresh in dev
-        "Pragma": "no-cache",
-        "Expires": "0"
-      },
-    });
-  } catch {
-    return new Response("Not Found", { status: 404 });
-  }
 }
 
 // Handle WebSocket connections
@@ -723,43 +625,12 @@ Deno.serve({ port: PORT }, async (req) => {
     return response;
   }
 
-  // Intercept /client/*.js to serve transpiled TypeScript modules
-  if (url.pathname.startsWith("/client/") && url.pathname.endsWith(".js")) {
-    try {
-      // Map .js to .ts file (e.g., /client/client.js -> ./client/client.ts)
-      const jsFilename = url.pathname.slice(1); // Remove leading /
-      const tsFilepath = `./${jsFilename.replace(/\.js$/, ".ts")}`;
-
-      const jsCode = await transpileFile(tsFilepath);
-      
-      // Client reload is now handled by the transpile callback
-
-      return new Response(jsCode, {
-        headers: {
-          "Content-Type": "application/javascript; charset=utf-8",
-          "Cache-Control": "no-cache, no-store, must-revalidate", // Always fresh in dev
-          "X-Transpiled": "true", // Debug header
-        },
-      });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      error(`❌ Failed to transpile TypeScript:`, errorMessage);
-
-      return new Response(
-        `// TypeScript transpilation failed\n// Error: ${errorMessage}\nconsole.error("Failed to load module:", ${JSON.stringify(errorMessage)});`,
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/javascript; charset=utf-8",
-          },
-        },
-      );
+  // Serve static files (handles transpilation automatically)
+  return serveStaticFile(url.pathname, (filepath, fromCache) => {
+    if (!fromCache) {
+      agent.requestReload();
     }
-  }
-
-  // Serve static files
-  const path = url.pathname === "/" ? "/client/index.html" : url.pathname;
-  return serveFile(`.${path}`);
+  });
 });
 
 // Setup file watcher for hot reload
