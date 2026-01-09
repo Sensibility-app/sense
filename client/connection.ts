@@ -11,6 +11,9 @@ let messageHandler: (message: any) => void;
 let processingHandler: (isProcessing: boolean) => void;
 let statusElement: HTMLElement;
 
+// Track pending heartbeat response
+let pendingHeartbeatTimeout: number | null = null;
+
 /**
  * Initialize connection module with required dependencies
  */
@@ -45,6 +48,11 @@ export function connect() {
       // Handle heartbeat pong
       if (message.type === "pong") {
         console.log("Received pong from server");
+        // Clear the timeout - connection is alive
+        if (pendingHeartbeatTimeout !== null) {
+          clearTimeout(pendingHeartbeatTimeout);
+          pendingHeartbeatTimeout = null;
+        }
         return;
       }
 
@@ -79,7 +87,7 @@ export function connect() {
 
   state.ws.onerror = (error) => {
     console.error("WebSocket error:", error);
-    state.connectionState = "error";
+    state.connectionState = "disconnected";
     updateConnectionStatus("error");
   };
 }
@@ -129,11 +137,13 @@ function startHeartbeat() {
         state.ws.send(JSON.stringify({ type: "ping" }));
 
         // Set a timeout to detect if server doesn't respond
-        setTimeout(() => {
-          if (state.connectionState === "connected") {
-            console.log("Heartbeat timeout - connection may be broken");
-            // Force reconnection
-            state.ws!.close();
+        // If pong is received, this timeout will be cleared in onmessage handler
+        pendingHeartbeatTimeout = setTimeout(() => {
+          console.log("Heartbeat timeout - no pong received, closing connection");
+          pendingHeartbeatTimeout = null;
+          // No pong received - connection is dead, force reconnection
+          if (state.ws) {
+            state.ws.close();
           }
         }, CONFIG.HEARTBEAT_TIMEOUT);
       } catch (error) {
@@ -153,6 +163,11 @@ function stopHeartbeat() {
   if (state.heartbeatInterval) {
     clearInterval(state.heartbeatInterval);
     state.heartbeatInterval = null;
+  }
+  // Also clear any pending timeout
+  if (pendingHeartbeatTimeout !== null) {
+    clearTimeout(pendingHeartbeatTimeout);
+    pendingHeartbeatTimeout = null;
   }
 }
 
@@ -205,7 +220,7 @@ export function sendMessage(type: string, content: string = ""): boolean {
 
   try {
     const message = content ? { type, content } : { type };
-    state.ws.send(JSON.stringify(message));
+    state.ws!.send(JSON.stringify(message));
     console.log("Message sent:", type);
     return true;
   } catch (error) {
