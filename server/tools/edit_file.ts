@@ -16,46 +16,57 @@ export const permissions: ToolPermissions = {
 
 export const definition: ToolDefinition = {
   name: "edit_file",
-  description: "Replace exact string match. Use edit_file_range for multi-line.",
+  description: "Edit a file by replacing an exact string match. For multi-line edits, use edit_file_range instead.",
   input_schema: {
+    $schema: "http://json-schema.org/draft-07/schema#",
     type: "object",
     properties: {
-      path: { type: "string", description: "File path" },
-      old_string: { type: "string", description: "Text to replace (exact match)" },
-      new_string: { type: "string", description: "Replacement text" },
+      file_path: {
+        type: "string",
+        description: "Path to the file relative to project root"
+      },
+      old_str: {
+        type: "string",
+        description: "The exact string to find and replace (must match exactly including whitespace)"
+      },
+      new_str: {
+        type: "string",
+        description: "The replacement text"
+      },
     },
-    required: ["path", "old_string", "new_string"],
+    required: ["file_path", "old_str", "new_str"],
+    additionalProperties: false,
   },
 };
 
 export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
   // Validate path
-  if (!input.path || typeof input.path !== "string") {
+  if (!input.file_path || typeof input.file_path !== "string") {
     return {
-      content: "Path is required and must be a string",
+      content: "file_path is required and must be a string",
       isError: true,
     };
   }
 
-  // Validate old_string
-  if (!input.old_string || typeof input.old_string !== "string") {
+  // Validate old_str
+  if (!input.old_str || typeof input.old_str !== "string") {
     return {
-      content: "old_string is required and must be a string",
+      content: "old_str is required and must be a string",
       isError: true,
     };
   }
 
-  // Validate new_string
-  if (input.new_string === undefined || typeof input.new_string !== "string") {
+  // Validate new_str
+  if (input.new_str === undefined || typeof input.new_str !== "string") {
     return {
-      content: "new_string is required and must be a string",
+      content: "new_str is required and must be a string",
       isError: true,
     };
   }
 
   try {
     // Sanitize path to prevent traversal attacks
-    const path = sanitizePath(input.path);
+    const path = sanitizePath(input.file_path);
 
     // Read current file content
     let content: string;
@@ -63,24 +74,24 @@ export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
       content = await Deno.readTextFile(path);
     } catch {
       return {
-        content: `File ${input.path} not found. Use create_file to create new files.`,
+        content: `File ${input.file_path} not found. Use create_file to create new files.`,
         isError: true,
       };
     }
 
     // Find and replace
-    if (!content.includes(input.old_string)) {
+    if (!content.includes(input.old_str)) {
       return {
-        content: `String not found in ${input.path}. Make sure old_string matches exactly (including whitespace). Consider using edit_file_range for more reliable editing.`,
+        content: `String not found in ${input.file_path}. Make sure old_str matches exactly (including whitespace). Consider using edit_file_range for more reliable editing.`,
         isError: true,
       };
     }
 
-    const newContent = content.replace(input.old_string, input.new_string);
+    const newContent = content.replace(input.old_str, input.new_str);
     await Deno.writeTextFile(path, newContent);
 
     return {
-      content: `Successfully edited ${input.path}`,
+      content: `Successfully edited ${input.file_path}`,
       isError: false
     };
   } catch (error) {

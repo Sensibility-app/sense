@@ -9,12 +9,16 @@ export interface ToolDefinition {
   name: string;
   description: string;
   input_schema: {
+    $schema?: string;
     type: "object";
     properties: Record<string, {
       type: string;
       description: string;
+      default?: unknown;
+      enum?: unknown[];
     }>;
     required: string[];
+    additionalProperties?: boolean;
   };
   cache_control?: { type: "ephemeral" };  // For prompt caching
 }

@@ -17,43 +17,51 @@ export const permissions: ToolPermissions = {
 
 export const definition: ToolDefinition = {
   name: "create_file",
-  description: "Create new file (fails if exists). Auto-creates parent dirs.",
+  description: "Create a new file in the project directory (fails if file already exists). Automatically creates parent directories if needed.",
   input_schema: {
+    $schema: "http://json-schema.org/draft-07/schema#",
     type: "object",
     properties: {
-      path: { type: "string", description: "File path" },
-      content: { type: "string", description: "File content" },
+      file_path: {
+        type: "string",
+        description: "Path to the new file relative to project root (e.g., 'server/tools/new_tool.ts')"
+      },
+      file_contents: {
+        type: "string",
+        description: "Content to write to the new file"
+      },
     },
-    required: ["path", "content"],
+    required: ["file_path", "file_contents"],
+    additionalProperties: false,
   },
 };
 
 export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
   // Validate path
-  if (!input.path || typeof input.path !== "string") {
+  if (!input.file_path || typeof input.file_path !== "string") {
     return {
-      content: "Path is required and must be a string",
+      content: "file_path is required and must be a string",
       isError: true,
     };
   }
 
   // Validate content
-  if (input.content === undefined || typeof input.content !== "string") {
+  if (input.file_contents === undefined || typeof input.file_contents !== "string") {
     return {
-      content: "Content is required and must be a string",
+      content: "file_contents is required and must be a string",
       isError: true,
     };
   }
 
   try {
     // Sanitize path to prevent traversal attacks
-    const path = sanitizePath(input.path);
+    const path = sanitizePath(input.file_path);
 
     // Check if file already exists
     try {
       await Deno.stat(path);
       return {
-        content: `File ${input.path} already exists. Use edit_file_range or edit_file to modify existing files.`,
+        content: `File ${input.file_path} already exists. Use edit_file_range or edit_file to modify existing files.`,
         isError: true,
       };
     } catch {
@@ -64,9 +72,9 @@ export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
     await Deno.mkdir(dirname(path), { recursive: true });
 
     // Write file
-    await Deno.writeTextFile(path, input.content);
+    await Deno.writeTextFile(path, input.file_contents);
 
-    return { content: `Successfully created ${input.path}`, isError: false };
+    return { content: `Successfully created ${input.file_path}`, isError: false };
   } catch (error) {
     return {
       content: error instanceof Error ? error.message : String(error),

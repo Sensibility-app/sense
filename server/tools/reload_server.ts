@@ -17,11 +17,13 @@ export const permissions: ToolPermissions = {
 
 export const definition: ToolDefinition = {
   name: "reload_server",
-  description: "Reload server to apply code changes",
+  description: "Trigger a server reload to apply code changes immediately. The server will restart in watch mode and pick up all modifications to server files. Useful after creating new tools or modifying server code.",
   input_schema: {
+    $schema: "http://json-schema.org/draft-07/schema#",
     type: "object",
     properties: {},
     required: [],
+    additionalProperties: false,
   },
 };
 

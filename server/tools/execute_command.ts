@@ -18,13 +18,18 @@ export const permissions: ToolPermissions = {
 
 export const definition: ToolDefinition = {
   name: "execute_command",
-  description: "Execute shell command in project root",
+  description: "Execute a whitelisted shell command in the project root directory. Only approved commands can be executed for security (git, deno, npm, node, ls, cat, grep, find, echo, pwd, which, whoami, curl, wget, jq, python, python3, ruby, go, cargo, rustc).",
   input_schema: {
+    $schema: "http://json-schema.org/draft-07/schema#",
     type: "object",
     properties: {
-      command: { type: "string", description: "Command to execute" },
+      command: {
+        type: "string",
+        description: "The shell command to execute (e.g., 'git status', 'deno test', 'npm install'). Command must be in the whitelist."
+      },
     },
     required: ["command"],
+    additionalProperties: false,
   },
 };
 

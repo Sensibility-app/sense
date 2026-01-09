@@ -17,26 +17,32 @@ export const permissions: ToolPermissions = {
 
 export const definition: ToolDefinition = {
   name: "list_directory",
-  description: "List directory contents (dirs marked with /)",
+  description: "List contents of a directory in the project. Directories are marked with trailing slash (/). Sorted with directories first, then files alphabetically.",
   input_schema: {
+    $schema: "http://json-schema.org/draft-07/schema#",
     type: "object",
     properties: {
-      path: { type: "string", description: "Directory path (default: '.')" },
+      dir_path: {
+        type: "string",
+        description: "Path to directory relative to project root (use '.' for project root, 'server' for server directory, etc.)",
+        default: "."
+      },
     },
     required: [],
+    additionalProperties: false,
   },
 };
 
 export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
   try {
     // Default to current directory if path not provided or empty
-    const pathInput = (input.path && typeof input.path === "string" && input.path.trim())
-      ? input.path.trim()
+    const pathInput = (input.dir_path && typeof input.dir_path === "string" && input.dir_path.trim())
+      ? input.dir_path.trim()
       : ".";
 
     if (typeof pathInput !== "string") {
       return {
-        content: `Path must be a string, received "${typeof pathInput}". Use "." for current directory, or specify a subdirectory like "client" or "server".`,
+        content: `dir_path must be a string, received "${typeof pathInput}". Use "." for project root, or specify a subdirectory like "client" or "server".`,
         isError: true,
       };
     }

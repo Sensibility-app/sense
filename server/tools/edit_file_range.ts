@@ -16,24 +16,38 @@ export const permissions: ToolPermissions = {
 
 export const definition: ToolDefinition = {
   name: "edit_file_range",
-  description: "Replace line range (1-indexed). Preferred for multi-line edits.",
+  description: "Replace a range of lines in a file (1-indexed). Preferred method for multi-line edits as it is more reliable than string matching.",
   input_schema: {
+    $schema: "http://json-schema.org/draft-07/schema#",
     type: "object",
     properties: {
-      path: { type: "string", description: "File path" },
-      start_line: { type: "number", description: "Start line (1-indexed)" },
-      end_line: { type: "number", description: "End line (1-indexed)" },
-      new_content: { type: "string", description: "Replacement content" },
+      file_path: {
+        type: "string",
+        description: "Path to the file relative to project root"
+      },
+      start_line: {
+        type: "number",
+        description: "First line number to replace (1-indexed, inclusive)"
+      },
+      end_line: {
+        type: "number",
+        description: "Last line number to replace (1-indexed, inclusive)"
+      },
+      new_content: {
+        type: "string",
+        description: "The new content to insert (replaces lines start_line through end_line)"
+      },
     },
-    required: ["path", "start_line", "end_line", "new_content"],
+    required: ["file_path", "start_line", "end_line", "new_content"],
+    additionalProperties: false,
   },
 };
 
 export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
   // Validate path
-  if (!input.path || typeof input.path !== "string") {
+  if (!input.file_path || typeof input.file_path !== "string") {
     return {
-      content: "Path is required and must be a string",
+      content: "file_path is required and must be a string",
       isError: true,
     };
   }
@@ -56,7 +70,7 @@ export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
 
   try {
     // Sanitize path to prevent traversal attacks
-    const path = sanitizePath(input.path);
+    const path = sanitizePath(input.file_path);
 
     // Read current file content
     let content: string;
@@ -64,7 +78,7 @@ export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
       content = await Deno.readTextFile(path);
     } catch {
       return {
-        content: `File ${input.path} not found. Use create_file to create new files.`,
+        content: `File ${input.file_path} not found. Use create_file to create new files.`,
         isError: true,
       };
     }
@@ -99,7 +113,7 @@ export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
 
     const replacedCount = endIdx - startIdx;
     return {
-      content: `Successfully edited ${input.path} (replaced lines ${input.start_line}-${input.end_line}, ${replacedCount} lines replaced)`,
+      content: `Successfully edited ${input.file_path} (replaced lines ${input.start_line}-${input.end_line}, ${replacedCount} lines replaced)`,
       isError: false
     };
   } catch (error) {

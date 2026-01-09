@@ -17,14 +17,23 @@ export const permissions: ToolPermissions = {
 
 export const definition: ToolDefinition = {
   name: "search_files",
-  description: "Search for pattern in files (grep)",
+  description: "Search for a text pattern in files using grep. Returns matching lines with file paths and line numbers. Useful for finding where code, text, or patterns appear in the codebase.",
   input_schema: {
+    $schema: "http://json-schema.org/draft-07/schema#",
     type: "object",
     properties: {
-      pattern: { type: "string", description: "Search pattern" },
-      path: { type: "string", description: "Search path (default: '.')" },
+      pattern: {
+        type: "string",
+        description: "The text pattern to search for (supports regex patterns)"
+      },
+      search_path: {
+        type: "string",
+        description: "Path to search in relative to project root (default: '.' for entire project)",
+        default: "."
+      },
     },
     required: ["pattern"],
+    additionalProperties: false,
   },
 };
 
@@ -39,7 +48,7 @@ export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
 
   try {
     // Default to current directory if path not provided
-    const searchPath = input.path || ".";
+    const searchPath = input.search_path || ".";
 
     // Execute grep command
     const process = new Deno.Command("grep", {

@@ -16,23 +16,34 @@ export const permissions: ToolPermissions = {
 
 export const definition: ToolDefinition = {
   name: "read_file_range",
-  description: "Read specific line range (1-indexed)",
+  description: "Read a specific range of lines from a file (1-indexed). Use -1 for end_line to read until end of file.",
   input_schema: {
+    $schema: "http://json-schema.org/draft-07/schema#",
     type: "object",
     properties: {
-      path: { type: "string", description: "File path" },
-      start_line: { type: "number", description: "Start line (1-indexed)" },
-      end_line: { type: "number", description: "End line (-1 for EOF)" },
+      file_path: {
+        type: "string",
+        description: "Path to the file relative to project root"
+      },
+      start_line: {
+        type: "number",
+        description: "First line number to read (1-indexed)"
+      },
+      end_line: {
+        type: "number",
+        description: "Last line number to read (1-indexed, or -1 to read until end of file)"
+      },
     },
-    required: ["path", "start_line", "end_line"],
+    required: ["file_path", "start_line", "end_line"],
+    additionalProperties: false,
   },
 };
 
 export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
   // Validate path
-  if (!input.path || typeof input.path !== "string") {
+  if (!input.file_path || typeof input.file_path !== "string") {
     return {
-      content: "Path is required and must be a string",
+      content: "file_path is required and must be a string",
       isError: true,
     };
   }
@@ -47,7 +58,7 @@ export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
 
   try {
     // Sanitize path to prevent traversal attacks
-    const path = sanitizePath(input.path);
+    const path = sanitizePath(input.file_path);
 
     // Read file and split into lines
     const content = await Deno.readTextFile(path);
