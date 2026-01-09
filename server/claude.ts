@@ -38,47 +38,11 @@ ENVIRONMENT:
 - Paths relative to root
 - Structure: /server (Deno TS - YOUR backend), /client (browser - YOUR frontend), /.sense (YOUR logs)
 
-FILE EDITING:
-- Use edit_file_range for multi-line changes (survives auto-formatting)
-- Use edit_file for single-line changes (requires exact match)
-- Use create_file only for new files (fails if exists)
-- Read files before modifying (especially critical for self-modification)
-
-Work iteratively using tools until task complete. Don't repeat identical tool calls.`;
-
-// Smart tool loading: select relevant tools based on task context
-function selectRelevantTools(
-  userMessage: string,
-  conversationHistory: Array<{ role: string; content: unknown }>
-): typeof TOOLS {
-  // After first interaction, provide all tools (Claude knows what it needs)
-  if (conversationHistory.length > 2) {
-    return TOOLS;
-  }
-
-  const msg = userMessage.toLowerCase();
-
-  // Core tools (always included)
-  const coreToolNames = new Set(['read_file', 'create_file', 'list_directory']);
-
-  // Add tools based on message keywords
-  if (/edit|modify|change|update|replace|fix/i.test(msg)) {
-    coreToolNames.add('edit_file');
-    coreToolNames.add('edit_file_range');
-    coreToolNames.add('read_file_range');
-  }
-  if (/find|search|grep|locate|where/i.test(msg)) {
-    coreToolNames.add('search_files');
-  }
-  if (/run|execute|test|build|command|compile|install/i.test(msg)) {
-    coreToolNames.add('execute_command');
-  }
-  if (/reload|restart/i.test(msg)) {
-    coreToolNames.add('reload_server');
-  }
-
-  return TOOLS.filter(t => coreToolNames.has(t.name));
-}
+TOOL USAGE:
+- Read files before editing to understand current state
+- Test changes carefully when modifying your own code
+- Work iteratively using tools until task complete
+- Don't repeat identical tool calls`;
 
 export interface MessageChunk {
   type: "text" | "text_delta" | "tool_use" | "tool_result" | "thinking" | "complete" | "token_usage";
@@ -140,12 +104,9 @@ export async function* executeTaskWithClaude(
 
     iterationCount++;
 
-    // Select relevant tools for this context (smart tool loading)
-    const relevantTools = selectRelevantTools(message, conversationHistory);
-
-    // Add cache_control to last tool for prompt caching
-    const toolsWithCache = relevantTools.map((tool, idx) =>
-      idx === relevantTools.length - 1
+    // Add cache_control to last tool for prompt caching (caches all tools)
+    const toolsWithCache = TOOLS.map((tool, idx) =>
+      idx === TOOLS.length - 1
         ? { ...tool, cache_control: { type: "ephemeral" } }
         : tool
     );
