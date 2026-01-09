@@ -7,7 +7,7 @@
 
 import { ToolDefinition, ToolExecutor, ToolPermissions, ToolResult } from "../tools/_shared/types.ts";
 import { parseCommand } from "../tools/_shared/command-whitelist.ts";
-import { getBaseDir } from "../tools/_shared/sanitize.ts";
+import { getBaseDir, sanitizeErrorMessage } from "../tools/_shared/sanitize.ts";
 import { COMMAND_OUTPUT_LIMIT_CHARS } from "../constants.ts";
 
 export const permissions: ToolPermissions = {
@@ -76,7 +76,7 @@ export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
     return { content: combined || "Command executed successfully", isError: false };
   } catch (error) {
     return {
-      content: `Command execution failed: ${error instanceof Error ? error.message : String(error)}`,
+      content: `Command execution failed: ${sanitizeErrorMessage(error)}`,
       isError: true,
     };
   }

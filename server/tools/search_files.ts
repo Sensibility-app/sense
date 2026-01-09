@@ -6,7 +6,7 @@
  */
 
 import { ToolDefinition, ToolExecutor, ToolPermissions, ToolResult } from "../tools/_shared/types.ts";
-import { getBaseDir } from "../tools/_shared/sanitize.ts";
+import { getBaseDir, sanitizeErrorMessage } from "../tools/_shared/sanitize.ts";
 import { SEARCH_RESULT_LIMIT, SEARCH_CONTENT_LIMIT } from "../constants.ts";
 
 export const permissions: ToolPermissions = {
@@ -79,7 +79,7 @@ export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
     };
   } catch (error) {
     return {
-      content: error instanceof Error ? error.message : String(error),
+      content: sanitizeErrorMessage(error),
       isError: true,
     };
   }

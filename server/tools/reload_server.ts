@@ -7,7 +7,7 @@
 
 import { join } from "jsr:@std/path@^1.0.0";
 import { ToolDefinition, ToolExecutor, ToolPermissions, ToolResult } from "../tools/_shared/types.ts";
-import { getBaseDir } from "../tools/_shared/sanitize.ts";
+import { getBaseDir, sanitizeErrorMessage } from "../tools/_shared/sanitize.ts";
 
 export const permissions: ToolPermissions = {
   filesystem: ["read", "write"],
@@ -45,7 +45,7 @@ export const executor: ToolExecutor = async (_input): Promise<ToolResult> => {
     };
   } catch (error) {
     return {
-      content: `Failed to trigger reload: ${error instanceof Error ? error.message : String(error)}`,
+      content: `Failed to trigger reload: ${sanitizeErrorMessage(error)}`,
       isError: true,
     };
   }

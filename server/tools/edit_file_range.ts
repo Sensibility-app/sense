@@ -6,7 +6,7 @@
  */
 
 import { ToolDefinition, ToolExecutor, ToolPermissions, ToolResult } from "../tools/_shared/types.ts";
-import { sanitizePath } from "../tools/_shared/sanitize.ts";
+import { sanitizePath, sanitizeErrorMessage } from "../tools/_shared/sanitize.ts";
 
 export const permissions: ToolPermissions = {
   filesystem: ["read", "write"],
@@ -118,7 +118,7 @@ export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
     };
   } catch (error) {
     return {
-      content: error instanceof Error ? error.message : String(error),
+      content: sanitizeErrorMessage(error),
       isError: true,
     };
   }

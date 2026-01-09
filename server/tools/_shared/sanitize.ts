@@ -41,3 +41,23 @@ export function sanitizePath(path: string): string {
 export function getBaseDir(): string {
   return BASE_DIR;
 }
+
+/**
+ * Sanitize error messages to prevent filesystem path leakage
+ * Replaces absolute filesystem paths with project-relative paths
+ *
+ * @param error - Error object or message
+ * @returns Sanitized error message showing only project-relative paths
+ */
+export function sanitizeErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  // Replace absolute filesystem paths with project-relative paths
+  // Example: /home/user/Code/Sense/server/main.ts → /server/main.ts
+  const sanitized = message.replace(
+    new RegExp(BASE_DIR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+    ''
+  );
+
+  return sanitized;
+}
