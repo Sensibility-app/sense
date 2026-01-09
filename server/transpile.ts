@@ -111,10 +111,10 @@ async function transpileTypeScript(filepath: string): Promise<string> {
  * Import paths are automatically rewritten from .ts to .js for browser compatibility.
  *
  * @param filepath - Path to TypeScript file (e.g., "./client/client.ts")
- * @returns Transpiled JavaScript code
+ * @returns Object with transpiled code and cache status
  * @throws Error if file read or transpilation fails
  */
-export async function transpileFile(filepath: string): Promise<string> {
+export async function transpileFile(filepath: string): Promise<{ code: string; fromCache: boolean }> {
   try {
     // Convert to absolute path for consistent caching
     const absolutePath = filepath.startsWith("/")
@@ -134,7 +134,7 @@ export async function transpileFile(filepath: string): Promise<string> {
       if (onTranspileComplete) {
         onTranspileComplete(filepath, true);
       }
-      return cached;
+      return { code: cached, fromCache: true };
     }
 
     // Cache miss - transpile TypeScript
@@ -154,7 +154,7 @@ export async function transpileFile(filepath: string): Promise<string> {
       onTranspileComplete(filepath, false);
     }
 
-    return jsCode;
+    return { code: jsCode, fromCache: false };
   } catch (err) {
     // Transpilation or file read failed
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -169,7 +169,7 @@ export async function transpileFile(filepath: string): Promise<string> {
     const entry = cache.get(absolutePath);
     if (entry) {
       logError("⚠️  Serving last known good version from cache");
-      return entry.transpiledCode;
+      return { code: entry.transpiledCode, fromCache: true };
     }
 
     // No cached version available - return error
