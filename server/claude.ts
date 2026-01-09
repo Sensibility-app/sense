@@ -32,6 +32,12 @@ SELF-HOSTING BEHAVIOR:
 - When user asks to "improve your UI" - they mean YOUR interface (not an external app)
 - When user asks to "fix your header" - they mean YOUR header (the app you are)
 
+SYSTEM EVENTS IN CONVERSATION:
+- System events appear as user messages with [bracket notation]
+- Examples: "[Server restarted during task]", "[Task interrupted: max iterations]"
+- These are informational only - continue working naturally with full conversation history
+- If you see a system event, you're resuming work after an interruption
+
 ENVIRONMENT:
 - Deno project (use Deno APIs, not Node.js)
 - Working dir: ${Deno.cwd().split('/').pop() || 'project'}
@@ -60,23 +66,31 @@ export interface MessageChunk {
   };
 }
 
-export async function* executeTaskWithClaude(
+export async function* continueConversation(
   message: string,
   conversationHistory: Array<{ role: "user" | "assistant" | "system"; content: unknown }> = [],
   session?: PersistentSession,
   shouldStop?: () => boolean,
   onChunk?: (chunk: MessageChunk) => void,
+  resumeMode: boolean = false,
 ): AsyncGenerator<MessageChunk> {
-  // Filter out system messages - Claude API only accepts user/assistant roles
-  // System messages are kept in session for client display only
-  const filteredHistory = conversationHistory.filter(
-    msg => msg.role === "user" || msg.role === "assistant"
-  ) as Array<{ role: "user" | "assistant"; content: unknown }>;
+  // Convert system messages to user messages with bracket notation
+  // Claude API only accepts user/assistant roles, so we convert system events to visible user messages
+  const processedHistory = conversationHistory.map(msg => {
+    if (msg.role === "system" && typeof msg.content === "string") {
+      return {
+        role: "user" as const,
+        content: `[${msg.content}]`
+      };
+    }
+    return msg as { role: "user" | "assistant"; content: unknown };
+  });
 
-  const messages: Array<{ role: "user" | "assistant"; content: unknown }> = [
-    ...filteredHistory,
-    { role: "user", content: message },
-  ];
+  // In resume mode, don't add a new message (avoid duplication)
+  // In normal mode, add the user's message to continue conversation
+  const messages: Array<{ role: "user" | "assistant"; content: unknown }> = resumeMode
+    ? processedHistory
+    : [...processedHistory, { role: "user", content: message }];
 
   let continueLoop = true;
   let iterationCount = 0;

@@ -1,5 +1,5 @@
 import { load } from "jsr:@std/dotenv@^0.225.0";
-import { executeTaskWithClaude } from "./claude.ts";
+import { continueConversation } from "./claude.ts";
 import { SessionLogger } from "./session.ts";
 import { PersistentSession, archiveCurrentSession } from "./persistent-session.ts";
 import { formatSessionHistory, getLastUserMessage, type DisplayMessage } from "./session-formatter.ts";
@@ -230,24 +230,81 @@ function handleWebSocket(socket: WebSocket) {
                level: "info",
              });
 
-             // Auto-resume: Get last user message and re-execute with full conversation history
-             const messages = globalSession.getMessages();
-             const lastUserMessage = messages.filter(m => m.role === "user").slice(-1)[0];
+             // Clear interrupted status
+             globalSession.clearCurrentTask();
 
-             if (lastUserMessage && typeof lastUserMessage.content === "string") {
-               // Clear interrupted status
-               globalSession.clearCurrentTask();
+             // Auto-resume: Continue conversation with full history (no new message)
+             // Create a unique task ID for tracking
+             const taskId = crypto.randomUUID();
+             const startTime = Date.now();
 
-               // Trigger task execution by simulating message from client
-               setTimeout(() => {
-                 const resumeMessage = {
-                   type: "message",
-                   content: lastUserMessage.content
+             activeTasks.set(taskId, {
+               taskId,
+               stopRequested: false,
+               startTime,
+               sessionLogger: new SessionLogger(),
+               content: "(auto-resume after server restart)"
+             });
+
+             broadcast({ type: "processing_status", isProcessing: true, message: "Resuming..." });
+
+             // Execute in background
+             (async () => {
+               try {
+                 const conversationHistory = globalSession.getMessages();
+                 let hasStartedAssistantMessage = false;
+
+                 const shouldStop = () => {
+                   const taskInfo = activeTasks.get(taskId);
+                   return taskInfo?.stopRequested || false;
                  };
-                 // Process the message through the normal message handler
-                 socket.onmessage?.({ data: JSON.stringify(resumeMessage) } as MessageEvent);
-               }, 100); // Small delay to ensure UI is ready
-             }
+
+                 // Resume with full conversation history, no new message (resumeMode: true)
+                 for await (const chunk of continueConversation("", conversationHistory, globalSession, shouldStop, undefined, true)) {
+                   if (chunk.type === "text_delta") {
+                     if (!hasStartedAssistantMessage) {
+                       broadcast({ type: "assistant_response" });
+                       hasStartedAssistantMessage = true;
+                     }
+                     broadcast({ type: "text_delta", content: chunk.content });
+                   } else if (chunk.type === "tool_use") {
+                     hasStartedAssistantMessage = false;
+                     const toolId = crypto.randomUUID();
+                     broadcast({
+                       type: "tool_use",
+                       toolName: chunk.toolName!,
+                       toolId: toolId,
+                       toolInput: chunk.toolInput,
+                     });
+                   } else if (chunk.type === "tool_result") {
+                     broadcast({
+                       type: "tool_result",
+                       toolId: crypto.randomUUID(),
+                       content: chunk.content,
+                       isError: chunk.isError || false,
+                     });
+                   } else if (chunk.type === "token_usage") {
+                     if (chunk.tokenUsage) {
+                       tokenTracker.addUsage(chunk.tokenUsage);
+                       const totalUsage = tokenTracker.getSessionUsage();
+                       broadcast({
+                         type: "token_usage",
+                         usage: totalUsage,
+                         formatted: tokenTracker.formatUsage(),
+                       });
+                     }
+                   } else if (chunk.type === "complete") {
+                     globalSession.completeTask();
+                     await completeTaskSafely(taskId, true);
+                     break;
+                   }
+                 }
+               } catch (err) {
+                 error("Auto-resume error:", err);
+                 globalSession.failTask();
+                 await completeTaskSafely(taskId, false, String(err));
+               }
+             })();
          } else {
            // Server restart without interrupted task
            globalSession.addMessage({
@@ -554,7 +611,7 @@ function handleWebSocket(socket: WebSocket) {
 
             let finalMessages: any[] = [];
 
-            for await (const chunk of executeTaskWithClaude(taskMessage, conversationHistory, globalSession, shouldStop, undefined)) {
+            for await (const chunk of continueConversation(taskMessage, conversationHistory, globalSession, shouldStop, undefined, false)) {
               if (chunk.type === "text_delta") {
                 // Start assistant message on first text delta
                 if (!hasStartedAssistantMessage) {
