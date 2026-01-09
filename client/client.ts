@@ -19,15 +19,15 @@ import {
   clearOutput
 } from "./ui-renderer.ts";
 
-// DOM elements
-const output = document.getElementById("output");
+// DOM elements (using unique names to avoid conflicts with ui-renderer.ts)
+const outputEl = document.getElementById("output");
 const statusEl = document.getElementById("status");
-const tokenInfo = document.getElementById("tokenInfo");
-const taskInput = document.getElementById("taskInput");
-const submitBtn = document.getElementById("submitBtn");
-const stopBtn = document.getElementById("stopBtn");
+const tokenInfoEl = document.getElementById("tokenInfo");
+const taskInputEl = document.getElementById("taskInput") as HTMLTextAreaElement;
+const submitBtnEl = document.getElementById("submitBtn");
+const stopBtnEl = document.getElementById("stopBtn");
 
-console.log("[client.ts] DOM elements:", { output, statusEl, tokenInfo, taskInput, submitBtn, stopBtn });
+console.log("[client.ts] DOM elements:", { outputEl, statusEl, tokenInfoEl, taskInputEl, submitBtnEl, stopBtnEl });
 
 // Handle all incoming messages from server
 function handleMessage(message) {
@@ -138,7 +138,7 @@ function sendMessage(type, content = "") {
 
 // Submit task with connection validation
 function submitTask() {
-  const task = taskInput.value.trim();
+  const task = taskInputEl.value.trim();
   if (!task || state.isProcessing) return;
 
   // Check connection state before sending
@@ -150,16 +150,16 @@ function submitTask() {
   // Check for slash commands
   if (task === "/clear") {
     if (sendMessage("clear_session")) {
-      taskInput.value = "";
-      taskInput.style.height = "20px";
+      taskInputEl.value = "";
+      taskInputEl.style.height = "20px";
     }
     return;
   }
 
   // Send task message
   if (sendMessage("task", task)) {
-    taskInput.value = "";
-    taskInput.style.height = "20px"; // Reset height
+    taskInputEl.value = "";
+    taskInputEl.style.height = "20px"; // Reset height
   }
 }
 
@@ -169,13 +169,13 @@ function stopTask() {
 }
 
 // Auto-resize textarea
-taskInput.addEventListener("input", () => {
-  taskInput.style.height = "20px";
-  taskInput.style.height = Math.min(taskInput.scrollHeight, 200) + "px";
+taskInputEl.addEventListener("input", () => {
+  taskInputEl.style.height = "20px";
+  taskInputEl.style.height = Math.min(taskInputEl.scrollHeight, 200) + "px";
 });
 
 // Submit on Enter (Shift+Enter for newline)
-taskInput.addEventListener("keydown", (e) => {
+taskInputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     submitTask();
@@ -183,8 +183,8 @@ taskInput.addEventListener("keydown", (e) => {
 });
 
 // Button handlers
-submitBtn.addEventListener("click", submitTask);
-stopBtn.addEventListener("click", stopTask);
+submitBtnEl.addEventListener("click", submitTask);
+stopBtnEl.addEventListener("click", stopTask);
 
 // Handle beforeunload to close connection cleanly
 window.addEventListener('beforeunload', () => {
@@ -195,7 +195,7 @@ window.addEventListener('beforeunload', () => {
 
 // Setup UI renderer with DOM elements
 console.log("[client.ts] About to call setupUI");
-setupUI(output, submitBtn, stopBtn, taskInput, tokenInfo);
+setupUI(outputEl, submitBtnEl, stopBtnEl, taskInputEl, tokenInfoEl);
 
 // Setup connection module with required dependencies
 console.log("[client.ts] About to call setupConnection with statusEl:", statusEl);
