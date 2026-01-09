@@ -1,7 +1,6 @@
 import { join } from "jsr:@std/path@^1.0.0";
 import { exists } from "jsr:@std/fs@^1.0.0";
 import { log, error } from "./logger.ts";
-import { SESSION_SAVE_DEBOUNCE_MS } from "./constants.ts";
 
 const SENSE_DIR = join(Deno.cwd(), ".sense");
 const CURRENT_SESSION_PATH = join(SENSE_DIR, "current-session.json");
@@ -37,8 +36,6 @@ export class PersistentSession {
     iterationCount?: number;
     canResume?: boolean;
   };
-  private saveTimeout?: number;
-  private pendingSave = false;
   private createdTime?: string;
 
   constructor() {
@@ -85,37 +82,8 @@ export class PersistentSession {
     }
   }
 
-  // Debounced save - batches writes within SESSION_SAVE_DEBOUNCE_MS window
-  save(): void {
-    // Mark that we have a pending save
-    this.pendingSave = true;
-
-    // Clear existing timeout
-    if (this.saveTimeout !== undefined) {
-      clearTimeout(this.saveTimeout);
-    }
-
-    // Schedule save
-    this.saveTimeout = setTimeout(() => {
-      this.flushSave().catch((err) => error("Failed to flush save:", err));
-    }, SESSION_SAVE_DEBOUNCE_MS);
-  }
-
-  // Immediate save - flushes pending saves immediately
-  async flushSave(): Promise<void> {
-    // Clear any pending debounced save
-    if (this.saveTimeout !== undefined) {
-      clearTimeout(this.saveTimeout);
-      this.saveTimeout = undefined;
-    }
-
-    if (!this.pendingSave && this.messages.length > 0) {
-      // No pending changes, skip
-      return;
-    }
-
-    this.pendingSave = false;
-
+  // Save immediately - critical for self-modifying system that can restart anytime
+  async save(): Promise<void> {
     try {
       const sessionData: SessionData = {
         id: this.sessionId,
@@ -130,6 +98,11 @@ export class PersistentSession {
     } catch (err) {
       error(`Failed to save session:`, err);
     }
+  }
+
+  // Alias for backward compatibility
+  async flushSave(): Promise<void> {
+    await this.save();
   }
 
   // No longer needed - createdTime is cached in memory
@@ -150,14 +123,15 @@ export class PersistentSession {
 
   addMessage(message: ConversationMessage): void {
     this.messages.push(message);
-    // Debounced save - batches rapid message additions
-    this.save();
+    // Fire and forget - don't block on save
+    this.save().catch((err) => error("Failed to save after addMessage:", err));
   }
 
   // Batch add multiple messages (useful for history loading)
   batchAddMessages(messages: ConversationMessage[]): void {
     this.messages.push(...messages);
-    this.save();
+    // Fire and forget - don't block on save
+    this.save().catch((err) => error("Failed to save after batchAddMessages:", err));
   }
 
   getMessages(): ConversationMessage[] {
@@ -215,26 +189,30 @@ export class PersistentSession {
   }
 
   // Task state management
-  startTask(task: string): void {
+  async startTask(task: string): Promise<void> {
     this.currentTask = {
       task,
       startedAt: new Date().toISOString(),
       status: "running",
     };
-    this.save(); // Debounced save
+    // CRITICAL: Must save immediately before task execution starts
+    // Server can restart during task execution
+    await this.save();
   }
 
   completeTask(): void {
     if (this.currentTask) {
       this.currentTask.status = "completed";
-      this.save(); // Debounced save
+      // Fire and forget - don't block on save
+      this.save().catch((err) => error("Failed to save after completeTask:", err));
     }
   }
 
   failTask(): void {
     if (this.currentTask) {
       this.currentTask.status = "failed";
-      this.save(); // Debounced save
+      // Fire and forget - don't block on save
+      this.save().catch((err) => error("Failed to save after failTask:", err));
     }
   }
 
@@ -248,7 +226,8 @@ export class PersistentSession {
       this.currentTask.interruptionReason = reason;
       this.currentTask.iterationCount = iterationCount;
       this.currentTask.canResume = canResume;
-      this.save(); // Debounced save
+      // Fire and forget - don't block on save
+      this.save().catch((err) => error("Failed to save after interruptTask:", err));
     }
   }
 
@@ -258,7 +237,8 @@ export class PersistentSession {
 
   clearCurrentTask(): void {
     this.currentTask = undefined;
-    this.save(); // Debounced save
+    // Fire and forget - don't block on save
+    this.save().catch((err) => error("Failed to save after clearCurrentTask:", err));
   }
 
   // Cleanup method to ensure final save before shutdown

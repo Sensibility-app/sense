@@ -587,7 +587,8 @@ function handleWebSocket(socket: WebSocket) {
         (async () => {
           try {
             // Mark task as started (use taskMessage which has full context)
-            globalSession.startTask(taskMessage);
+            // CRITICAL: Await to ensure task state is saved before execution starts
+            await globalSession.startTask(taskMessage);
 
             // Add user message to persistent session (use taskMessage for full context)
             globalSession.addMessage({
