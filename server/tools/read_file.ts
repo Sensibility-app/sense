@@ -7,7 +7,9 @@
 
 import { createTool, PERMISSIONS, ToolResult } from "../tools/_shared/tool-utils.ts";
 import { sanitizePath } from "../tools/_shared/sanitize.ts";
-import { MAX_FILE_SIZE_CHARS } from "../constants.ts";
+
+// Maximum characters to read from a file to prevent context explosion
+const MAX_FILE_SIZE_CHARS = 10000;
 
 export const { definition, permissions, executor } = createTool(
   {

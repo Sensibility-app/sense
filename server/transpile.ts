@@ -36,7 +36,6 @@ export function setTranspileCallback(callback: TranspileCallback | null) {
 interface CacheEntry {
   sourceHash: string;
   transpiledCode: string;
-  timestamp: number;
 }
 
 /**
@@ -50,17 +49,7 @@ function getCached(filepath: string, sourceHash: string): string | null {
 }
 
 function setCached(filepath: string, sourceHash: string, transpiledCode: string): void {
-  cache.set(filepath, { sourceHash, transpiledCode, timestamp: Date.now() });
-}
-
-/**
- * Calculate SHA-256 hash of source code
- */
-async function hashSource(source: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(source);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  return encodeHex(hashBuffer);
+  cache.set(filepath, { sourceHash, transpiledCode });
 }
 
 /**
@@ -124,8 +113,11 @@ export async function transpileFile(filepath: string): Promise<{ code: string; f
     // Read source file
     const tsCode = await Deno.readTextFile(absolutePath);
 
-    // Calculate hash of source
-    const sourceHash = await hashSource(tsCode);
+    // Calculate hash of source (SHA-256)
+    const encoder = new TextEncoder();
+    const data = encoder.encode(tsCode);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const sourceHash = encodeHex(hashBuffer);
 
     // Check cache (use absolute path as key)
     const cached = getCached(absolutePath, sourceHash);
@@ -191,14 +183,4 @@ export function invalidateCache(filepath: string): void {
 export function clearCache(): void {
   cache.clear();
   log("🗑️  All transpilation caches cleared");
-}
-
-/**
- * Get cache statistics
- */
-export function getCacheStats() {
-  return {
-    size: cache.size,
-    files: cache.size,
-  };
 }

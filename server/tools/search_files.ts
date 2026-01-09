@@ -9,7 +9,10 @@ import { walk } from "jsr:@std/fs@^1.0.0";
 import { relative } from "jsr:@std/path@^1.0.0";
 import { createTool, PERMISSIONS, ToolResult, isBinaryFile, SKIP_DIRECTORY_PATTERNS } from "../tools/_shared/tool-utils.ts";
 import { getBaseDir, resolveSearchPath } from "../tools/_shared/sanitize.ts";
-import { SEARCH_RESULT_LIMIT, SEARCH_CONTENT_LIMIT } from "../constants.ts";
+
+// Search result limits to prevent context explosion
+const SEARCH_RESULT_LIMIT = 100; // Maximum search results to return
+const SEARCH_CONTENT_LIMIT = 5000; // Maximum search content characters
 
 export const { definition, permissions, executor } = createTool(
   {
