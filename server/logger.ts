@@ -43,6 +43,28 @@ export function error(...args: unknown[]): void {
   });
 }
 
+export function logDebug(...args: unknown[]): void {
+  // Only log debug messages in development mode
+  const isDevelopment = Deno.env.get("DENO_ENV") !== "production";
+
+  if (isDevelopment) {
+    const timestamp = new Date().toISOString();
+    const message = args.map(arg =>
+      typeof arg === "object" ? JSON.stringify(arg, null, 2) : String(arg)
+    ).join(" ");
+
+    const logLine = `[${timestamp}] DEBUG: ${message}\n`;
+
+    // Write to console only (don't clutter log file)
+    console.log(`[DEBUG]`, ...args);
+
+    // Optionally write to file
+    Deno.writeTextFile(LOG_FILE, logLine, { append: true }).catch(() => {
+      // Ignore file write errors
+    });
+  }
+}
+
 export function getLogPath(): string {
   return LOG_FILE;
 }

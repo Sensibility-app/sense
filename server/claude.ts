@@ -16,45 +16,59 @@ function getClient(): Anthropic {
   return client;
 }
 
-const SYSTEM_PROMPT = `You are Claude Code, an AI assistant integrated into a browser-based development environment called Sense.
+const SYSTEM_PROMPT = `You are Claude Code in Sense IDE, a browser-based dev environment.
 
-You have access to tools that allow you to interact with the filesystem and execute commands. Use these tools to complete the user's requests.
+ENVIRONMENT:
+- Deno project (use Deno APIs, not Node.js)
+- Working dir: ${Deno.cwd().split('/').pop() || 'project'}
+- Paths relative to root
+- Structure: /server (Deno TS), /client (browser), /.sense (logs)
 
-IMPORTANT CONTEXT:
-- This is a Deno project (use Deno APIs, not Node.js)
-- Working directory: ${Deno.cwd()}
-- All file paths are relative to the project root
-- You can read files, write files, list directories, execute commands, and search for patterns
-- When modifying files, always read them first to understand the current content
-- Be proactive: if you need information, use tools to get it
-- Continue using tools until the task is complete
+FILE EDITING:
+- Use edit_file_range for multi-line changes (survives auto-formatting)
+- Use edit_file for single-line changes (requires exact match)
+- Use create_file only for new files (fails if exists)
+- Read files before modifying
 
-FILE EDITING BEST PRACTICES:
-- PREFER edit_file_range for multi-line changes (most reliable, works even after auto-formatting)
-- Use edit_file for small, precise single-line changes (requires exact string match)
-- Use create_file only for brand new files (fails if file exists)
-- Use read_file_range to read specific line ranges from large files
+SELF-HOSTING:
+- Server auto-reloads on changes (use reload_server for immediate reload)
+- You can modify your own code
 
-PROJECT SETUP:
-- Server code in /server (TypeScript for Deno)
-- Client code in /client (HTML/CSS/JS for browser)
-- Session logs in /.sense/sessions
-- This is a self-hosting system that should be able to modify itself
+Work iteratively using tools until task complete. Don't repeat identical tool calls.`;
 
-SELF-HOSTING CAPABILITY:
-- The server runs in watch mode and auto-reloads when files change
-- After modifying server code, use reload_server tool to apply changes immediately
-- You can modify your own tools, handlers, and system prompts
-- Client-side changes (HTML/CSS/JS) take effect on browser refresh
+// Smart tool loading: select relevant tools based on task context
+function selectRelevantTools(
+  userMessage: string,
+  conversationHistory: Array<{ role: string; content: unknown }>
+): typeof TOOLS {
+  // After first interaction, provide all tools (Claude knows what it needs)
+  if (conversationHistory.length > 2) {
+    return TOOLS;
+  }
 
-EXPLORATION STRATEGY:
-- When exploring the codebase, progressively drill down into subdirectories
-- If you call list_directory on ".", you'll see directories like "client/", "server/"
-- To explore further, call list_directory("client") or list_directory("server")
-- NEVER call the same tool with the same arguments repeatedly - if you're not getting what you need, try a different approach
-- Use search_files or read_file to examine specific files once you've located them
+  const msg = userMessage.toLowerCase();
 
-Your goal is to complete tasks autonomously by using the available tools iteratively until the job is done.`;
+  // Core tools (always included)
+  const coreToolNames = new Set(['read_file', 'create_file', 'list_directory']);
+
+  // Add tools based on message keywords
+  if (/edit|modify|change|update|replace|fix/i.test(msg)) {
+    coreToolNames.add('edit_file');
+    coreToolNames.add('edit_file_range');
+    coreToolNames.add('read_file_range');
+  }
+  if (/find|search|grep|locate|where/i.test(msg)) {
+    coreToolNames.add('search_files');
+  }
+  if (/run|execute|test|build|command|compile|install/i.test(msg)) {
+    coreToolNames.add('execute_command');
+  }
+  if (/reload|restart/i.test(msg)) {
+    coreToolNames.add('reload_server');
+  }
+
+  return TOOLS.filter(t => coreToolNames.has(t.name));
+}
 
 export interface MessageChunk {
   type: "text" | "text_delta" | "tool_use" | "tool_result" | "thinking" | "complete" | "token_usage";
@@ -67,6 +81,8 @@ export interface MessageChunk {
     inputTokens: number;
     outputTokens: number;
     totalTokens: number;
+    cacheCreationInputTokens?: number;
+    cacheReadInputTokens?: number;
   };
 }
 
@@ -114,13 +130,30 @@ export async function* executeTaskWithClaude(
 
     iterationCount++;
 
-    // Call Claude with streaming enabled
+    // Select relevant tools for this context (smart tool loading)
+    const relevantTools = selectRelevantTools(message, conversationHistory);
+
+    // Add cache_control to last tool for prompt caching
+    const toolsWithCache = relevantTools.map((tool, idx) =>
+      idx === relevantTools.length - 1
+        ? { ...tool, cache_control: { type: "ephemeral" } }
+        : tool
+    );
+
+    // Call Claude with streaming enabled and prompt caching
     const stream = await getClient().messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      // System prompt as array with cache_control for caching
+      system: [
+        {
+          type: "text",
+          text: SYSTEM_PROMPT,
+          cache_control: { type: "ephemeral" }
+        } as any
+      ],
       messages: messages as Anthropic.MessageParam[],
-      tools: TOOLS as Anthropic.Tool[],
+      tools: toolsWithCache as any,
       stream: true,
     });
 
@@ -130,16 +163,20 @@ export async function* executeTaskWithClaude(
     let currentToolUse: Anthropic.ToolUseBlock | null = null;
 
     // Process streaming response
-    // Process streaming response
-    let currentMessageUsage: { input_tokens?: number; output_tokens?: number } | null = null;
+    let currentMessageUsage: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    } | null = null;
     
     for await (const chunk of stream) {
       if (chunk.type === "message_start") {
         // Message started - capture usage information if available
-        console.log("Message start chunk:", JSON.stringify(chunk, null, 2));
+        logDebug("Message start chunk:", JSON.stringify(chunk, null, 2));
         if (chunk.message && chunk.message.usage) {
           currentMessageUsage = chunk.message.usage;
-          console.log("Captured message usage:", currentMessageUsage);
+          logDebug("Captured message usage:", currentMessageUsage);
         }
         continue;
       } else if (chunk.type === "content_block_start") {
@@ -342,7 +379,7 @@ Please keep your explanation concise (2-3 sentences).`,
       }
     }
 
-    // Emit token usage if available
+    // Emit token usage if available (including cache metrics)
     if (currentMessageUsage) {
       const tokenChunk: MessageChunk = {
         type: "token_usage",
@@ -351,6 +388,8 @@ Please keep your explanation concise (2-3 sentences).`,
           inputTokens: currentMessageUsage.input_tokens || 0,
           outputTokens: currentMessageUsage.output_tokens || 0,
           totalTokens: (currentMessageUsage.input_tokens || 0) + (currentMessageUsage.output_tokens || 0),
+          cacheCreationInputTokens: currentMessageUsage.cache_creation_input_tokens || 0,
+          cacheReadInputTokens: currentMessageUsage.cache_read_input_tokens || 0,
         },
       };
       if (onChunk) onChunk(tokenChunk);

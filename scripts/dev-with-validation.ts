@@ -64,8 +64,9 @@ async function restartServer() {
 }
 
 // Start initial server
-console.log("🔍 Development server with syntax validation");
-console.log("📂 Watching: ./server, ./client\n");
+console.log("🔍 Development server with syntax validation and TypeScript transpilation");
+console.log("📂 Watching: ./server (TypeScript), ./client (TypeScript → JavaScript)");
+console.log("💡 Client TypeScript is transpiled in-memory on request\n");
 
 serverProcess = startServer();
 

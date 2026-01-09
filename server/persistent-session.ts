@@ -1,6 +1,7 @@
 import { join } from "jsr:@std/path@^1.0.0";
 import { exists } from "jsr:@std/fs@^1.0.0";
 import { log, error } from "./logger.ts";
+import { SESSION_SAVE_DEBOUNCE_MS } from "./constants.ts";
 
 const SENSE_DIR = join(Deno.cwd(), ".sense");
 const CURRENT_SESSION_PATH = join(SENSE_DIR, "current-session.json");
@@ -36,6 +37,9 @@ export class PersistentSession {
     iterationCount?: number;
     canResume?: boolean;
   };
+  private saveTimeout?: number;
+  private pendingSave = false;
+  private createdTime?: string;
 
   constructor() {
     this.sessionId = "current";
@@ -51,6 +55,7 @@ export class PersistentSession {
         this.messages = sessionData.messages;
         this.currentTask = sessionData.currentTask;
         this.sessionId = sessionData.id;
+        this.createdTime = sessionData.created; // Cache created time
         await this.updateLastActive();
         log(`Loaded current session with ${this.messages.length} messages`);
 
@@ -60,7 +65,7 @@ export class PersistentSession {
           this.currentTask.status = "interrupted";
           this.currentTask.interruptionReason = "server_restart";
           this.currentTask.canResume = true;
-          await this.save();
+          await this.flushSave(); // Immediate save for critical state
         }
 
         if (this.currentTask?.status === "interrupted") {
@@ -70,7 +75,8 @@ export class PersistentSession {
       }
 
       // New session
-      await this.save();
+      this.createdTime = new Date().toISOString();
+      await this.flushSave(); // Immediate save for new session
       log(`Created new current session`);
       return false;
     } catch (err) {
@@ -79,11 +85,41 @@ export class PersistentSession {
     }
   }
 
-  async save(): Promise<void> {
+  // Debounced save - batches writes within SESSION_SAVE_DEBOUNCE_MS window
+  save(): void {
+    // Mark that we have a pending save
+    this.pendingSave = true;
+
+    // Clear existing timeout
+    if (this.saveTimeout !== undefined) {
+      clearTimeout(this.saveTimeout);
+    }
+
+    // Schedule save
+    this.saveTimeout = setTimeout(() => {
+      this.flushSave().catch((err) => error("Failed to flush save:", err));
+    }, SESSION_SAVE_DEBOUNCE_MS);
+  }
+
+  // Immediate save - flushes pending saves immediately
+  async flushSave(): Promise<void> {
+    // Clear any pending debounced save
+    if (this.saveTimeout !== undefined) {
+      clearTimeout(this.saveTimeout);
+      this.saveTimeout = undefined;
+    }
+
+    if (!this.pendingSave && this.messages.length > 0) {
+      // No pending changes, skip
+      return;
+    }
+
+    this.pendingSave = false;
+
     try {
       const sessionData: SessionData = {
         id: this.sessionId,
-        created: this.messages.length === 0 ? new Date().toISOString() : (await this.getCreatedTime()),
+        created: this.createdTime || new Date().toISOString(),
         lastActive: new Date().toISOString(),
         messages: this.messages,
         ...(this.currentTask && { currentTask: this.currentTask }),
@@ -96,18 +132,8 @@ export class PersistentSession {
     }
   }
 
-  private async getCreatedTime(): Promise<string> {
-    try {
-      if (await exists(CURRENT_SESSION_PATH)) {
-        const data = await Deno.readTextFile(CURRENT_SESSION_PATH);
-        const sessionData: SessionData = JSON.parse(data);
-        return sessionData.created;
-      }
-    } catch {
-      // Ignore
-    }
-    return new Date().toISOString();
-  }
+  // No longer needed - createdTime is cached in memory
+  // private async getCreatedTime(): Promise<string> removed
 
   private async updateLastActive(): Promise<void> {
     try {
@@ -124,8 +150,14 @@ export class PersistentSession {
 
   addMessage(message: ConversationMessage): void {
     this.messages.push(message);
-    // Save immediately to persist
-    this.save().catch(error);
+    // Debounced save - batches rapid message additions
+    this.save();
+  }
+
+  // Batch add multiple messages (useful for history loading)
+  batchAddMessages(messages: ConversationMessage[]): void {
+    this.messages.push(...messages);
+    this.save();
   }
 
   getMessages(): ConversationMessage[] {
@@ -167,7 +199,8 @@ export class PersistentSession {
   async clear(): Promise<void> {
     this.messages = [];
     this.currentTask = undefined; // Clear interrupted task as well
-    await this.save();
+    this.createdTime = new Date().toISOString(); // Reset created time
+    await this.flushSave(); // Immediate save for clear operation
   }
 
   async delete(): Promise<void> {
@@ -188,20 +221,20 @@ export class PersistentSession {
       startedAt: new Date().toISOString(),
       status: "running",
     };
-    this.save().catch(error);
+    this.save(); // Debounced save
   }
 
   completeTask(): void {
     if (this.currentTask) {
       this.currentTask.status = "completed";
-      this.save().catch(error);
+      this.save(); // Debounced save
     }
   }
 
   failTask(): void {
     if (this.currentTask) {
       this.currentTask.status = "failed";
-      this.save().catch(error);
+      this.save(); // Debounced save
     }
   }
 
@@ -215,7 +248,7 @@ export class PersistentSession {
       this.currentTask.interruptionReason = reason;
       this.currentTask.iterationCount = iterationCount;
       this.currentTask.canResume = canResume;
-      this.save().catch(error);
+      this.save(); // Debounced save
     }
   }
 
@@ -232,7 +265,12 @@ export class PersistentSession {
 
   clearCurrentTask(): void {
     this.currentTask = undefined;
-    this.save().catch(error);
+    this.save(); // Debounced save
+  }
+
+  // Cleanup method to ensure final save before shutdown
+  async shutdown(): Promise<void> {
+    await this.flushSave();
   }
 }
 

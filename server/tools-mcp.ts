@@ -1,4 +1,11 @@
 import { join, dirname } from "jsr:@std/path@^1.0.0";
+import {
+  MAX_FILE_SIZE_CHARS,
+  MAX_DIRECTORY_ENTRIES,
+  COMMAND_OUTPUT_LIMIT_CHARS,
+  SEARCH_RESULT_LIMIT,
+  SEARCH_CONTENT_LIMIT,
+} from "./constants.ts";
 
 const BASE_DIR = Deno.cwd();
 
@@ -11,159 +18,167 @@ function sanitizePath(path: string): string {
   return resolved;
 }
 
-// MCP-style tool definitions for Claude
+// Allowed commands for execute_command tool (security whitelist)
+const ALLOWED_COMMANDS = new Set([
+  "git", "deno", "npm", "node",
+  "ls", "cat", "grep", "find",
+  "echo", "pwd", "which", "whoami",
+  "curl", "wget", "jq",
+  "python", "python3", "ruby", "go", "cargo", "rustc"
+]);
+
+// Parse command string into command and arguments (handles quoted strings)
+function parseCommand(commandString: string): { command: string; args: string[] } {
+  const parts: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  let quoteChar = "";
+
+  for (let i = 0; i < commandString.length; i++) {
+    const char = commandString[i];
+    const nextChar = commandString[i + 1];
+
+    if ((char === '"' || char === "'") && !inQuotes) {
+      inQuotes = true;
+      quoteChar = char;
+    } else if (char === quoteChar && inQuotes) {
+      inQuotes = false;
+      quoteChar = "";
+    } else if (char === " " && !inQuotes) {
+      if (current) {
+        parts.push(current);
+        current = "";
+      }
+    } else if (char === "\\" && nextChar && !inQuotes) {
+      // Handle escaped characters outside quotes
+      current += nextChar;
+      i++; // Skip next character
+    } else {
+      current += char;
+    }
+  }
+
+  if (current) {
+    parts.push(current);
+  }
+
+  if (parts.length === 0) {
+    throw new Error("Empty command");
+  }
+
+  const command = parts[0];
+  const args = parts.slice(1);
+
+  // Validate command is in whitelist
+  if (!ALLOWED_COMMANDS.has(command)) {
+    throw new Error(`Command '${command}' is not allowed. Allowed commands: ${Array.from(ALLOWED_COMMANDS).join(", ")}`);
+  }
+
+  return { command, args };
+}
+
+// MCP-style tool definitions for Claude (optimized for token efficiency)
 export const TOOLS = [
   {
     name: "read_file",
-    description: "Read the contents of a file. Returns the file contents as a string.",
+    description: "Read file contents",
     input_schema: {
       type: "object",
       properties: {
-        path: {
-          type: "string",
-          description: "Path to the file relative to project root",
-        },
+        path: { type: "string", description: "File path" },
       },
       required: ["path"],
     },
   },
   {
     name: "create_file",
-    description: "Create a NEW file with content. Fails if file already exists. Use edit_file_range or edit_file to modify existing files. Creates parent directories as needed.",
+    description: "Create new file (fails if exists). Auto-creates parent dirs.",
     input_schema: {
       type: "object",
       properties: {
-        path: {
-          type: "string",
-          description: "Path to the new file relative to project root",
-        },
-        content: {
-          type: "string",
-          description: "Content to write to the new file",
-        },
+        path: { type: "string", description: "File path" },
+        content: { type: "string", description: "File content" },
       },
       required: ["path", "content"],
     },
   },
   {
     name: "edit_file",
-    description: "Edit an existing file by replacing exact string matches. For small, precise edits. The old_string must match exactly (including whitespace). For multi-line changes, prefer edit_file_range.",
+    description: "Replace exact string match. Use edit_file_range for multi-line.",
     input_schema: {
       type: "object",
       properties: {
-        path: {
-          type: "string",
-          description: "Path to the file relative to project root",
-        },
-        old_string: {
-          type: "string",
-          description: "Exact string to find and replace. Must match exactly including whitespace.",
-        },
-        new_string: {
-          type: "string",
-          description: "String to replace old_string with",
-        },
+        path: { type: "string", description: "File path" },
+        old_string: { type: "string", description: "Text to replace (exact match)" },
+        new_string: { type: "string", description: "Replacement text" },
       },
       required: ["path", "old_string", "new_string"],
     },
   },
   {
     name: "read_file_range",
-    description: "Read specific line range from a file. More efficient than reading entire large files. Lines are 1-indexed.",
+    description: "Read specific line range (1-indexed)",
     input_schema: {
       type: "object",
       properties: {
-        path: {
-          type: "string",
-          description: "Path to the file relative to project root",
-        },
-        start_line: {
-          type: "number",
-          description: "Starting line number (1-indexed, inclusive)",
-        },
-        end_line: {
-          type: "number",
-          description: "Ending line number (1-indexed, inclusive). Use -1 for end of file.",
-        },
+        path: { type: "string", description: "File path" },
+        start_line: { type: "number", description: "Start line (1-indexed)" },
+        end_line: { type: "number", description: "End line (-1 for EOF)" },
       },
       required: ["path", "start_line", "end_line"],
     },
   },
   {
     name: "edit_file_range",
-    description: "RECOMMENDED: Replace specific line range with new content. Most reliable editing method - works even if file was auto-formatted. Use this for multi-line changes.",
+    description: "Replace line range (1-indexed). Preferred for multi-line edits.",
     input_schema: {
       type: "object",
       properties: {
-        path: {
-          type: "string",
-          description: "Path to the file relative to project root",
-        },
-        start_line: {
-          type: "number",
-          description: "Starting line number to replace (1-indexed, inclusive)",
-        },
-        end_line: {
-          type: "number",
-          description: "Ending line number to replace (1-indexed, inclusive)",
-        },
-        new_content: {
-          type: "string",
-          description: "New content to replace the specified line range",
-        },
+        path: { type: "string", description: "File path" },
+        start_line: { type: "number", description: "Start line (1-indexed)" },
+        end_line: { type: "number", description: "End line (1-indexed)" },
+        new_content: { type: "string", description: "Replacement content" },
       },
       required: ["path", "start_line", "end_line", "new_content"],
     },
   },
   {
     name: "list_directory",
-    description: "List files and directories in a given path. Directories are marked with trailing /. To explore subdirectories, call this tool again with the subdirectory path (e.g., 'client', 'server', 'client/components').",
+    description: "List directory contents (dirs marked with /)",
     input_schema: {
       type: "object",
       properties: {
-        path: {
-          type: "string",
-          description: "Path to the directory relative to project root. Defaults to '.' (current directory) if not provided. Examples: '.' for root, 'client' for client directory, 'server' for server directory, 'client/components' for nested directories.",
-        },
+        path: { type: "string", description: "Directory path (default: '.')" },
       },
       required: [],
     },
   },
   {
     name: "execute_command",
-    description: "Execute a shell command in the project directory. Returns stdout/stderr. Use this for running tests, builds, git commands, etc.",
+    description: "Execute shell command in project root",
     input_schema: {
       type: "object",
       properties: {
-        command: {
-          type: "string",
-          description: "The command to execute (e.g., 'deno test', 'git status')",
-        },
+        command: { type: "string", description: "Command to execute" },
       },
       required: ["command"],
     },
   },
   {
     name: "search_files",
-    description: "Search for a pattern in files using grep. Returns matching lines with file paths.",
+    description: "Search for pattern in files (grep)",
     input_schema: {
       type: "object",
       properties: {
-        pattern: {
-          type: "string",
-          description: "Pattern to search for",
-        },
-        path: {
-          type: "string",
-          description: "Path to search in (default: '.')",
-        },
+        pattern: { type: "string", description: "Search pattern" },
+        path: { type: "string", description: "Search path (default: '.')" },
       },
       required: ["pattern"],
     },
   },
   {
     name: "reload_server",
-    description: "Reload the server to apply code changes. Use this after modifying server code (tools, handlers, etc.) to make changes take effect. The server will restart automatically in watch mode.",
+    description: "Reload server to apply code changes",
     input_schema: {
       type: "object",
       properties: {},
@@ -189,11 +204,10 @@ export async function executeTool(
         const path = sanitizePath(input.path);
         let content = await Deno.readTextFile(path);
 
-        // Limit file size to prevent context explosion (max 10K chars)
-        const MAX_FILE_CHARS = 10000;
-        if (content.length > MAX_FILE_CHARS) {
-          content = content.slice(0, MAX_FILE_CHARS) +
-            `\n\n... [file truncated at ${MAX_FILE_CHARS} characters, total size: ${content.length} chars]`;
+        // Limit file size to prevent context explosion
+        if (content.length > MAX_FILE_SIZE_CHARS) {
+          content = content.slice(0, MAX_FILE_SIZE_CHARS) +
+            `\n\n... [file truncated at ${MAX_FILE_SIZE_CHARS} characters, total size: ${content.length} chars]`;
         }
 
         return { content, isError: false };
@@ -416,12 +430,11 @@ export async function executeTool(
         );
 
         // Limit to prevent huge directories from exploding context
-        const MAX_ENTRIES = 500;
-        if (formatted.length > MAX_ENTRIES) {
-          const truncated = formatted.slice(0, MAX_ENTRIES);
+        if (formatted.length > MAX_DIRECTORY_ENTRIES) {
+          const truncated = formatted.slice(0, MAX_DIRECTORY_ENTRIES);
           return {
             content: `Directories end with /. To explore a directory, call list_directory with its path (e.g., "client" or "server").\n\n` +
-              truncated.join("\n") + `\n\n... [${formatted.length - MAX_ENTRIES} more entries truncated]`,
+              truncated.join("\n") + `\n\n... [${formatted.length - MAX_DIRECTORY_ENTRIES} more entries truncated]`,
             isError: false
           };
         }
@@ -440,34 +453,41 @@ export async function executeTool(
             isError: true,
           };
         }
-        const cmd = input.command.split(" ");
-        const process = new Deno.Command(cmd[0], {
-          args: cmd.slice(1),
-          cwd: BASE_DIR,
-          stdout: "piped",
-          stderr: "piped",
-        });
 
-        const { code, stdout, stderr } = await process.output();
-        const output = new TextDecoder().decode(stdout);
-        const errorOutput = new TextDecoder().decode(stderr);
-        let combined = output + errorOutput;
+        try {
+          const { command, args } = parseCommand(input.command);
+          const process = new Deno.Command(command, {
+            args: args,
+            cwd: BASE_DIR,
+            stdout: "piped",
+            stderr: "piped",
+          });
 
-        // Limit command output to prevent context explosion
-        const MAX_OUTPUT_CHARS = 5000;
-        if (combined.length > MAX_OUTPUT_CHARS) {
-          combined = combined.slice(0, MAX_OUTPUT_CHARS) +
-            `\n\n... [output truncated at ${MAX_OUTPUT_CHARS} characters, total: ${combined.length} chars]`;
-        }
+          const { code, stdout, stderr } = await process.output();
+          const output = new TextDecoder().decode(stdout);
+          const errorOutput = new TextDecoder().decode(stderr);
+          let combined = output + errorOutput;
 
-        if (code !== 0) {
+          // Limit command output to prevent context explosion
+          if (combined.length > COMMAND_OUTPUT_LIMIT_CHARS) {
+            combined = combined.slice(0, COMMAND_OUTPUT_LIMIT_CHARS) +
+              `\n\n... [output truncated at ${COMMAND_OUTPUT_LIMIT_CHARS} characters, total: ${combined.length} chars]`;
+          }
+
+          if (code !== 0) {
+            return {
+              content: `Command exited with code ${code}:\n${combined}`,
+              isError: true,
+            };
+          }
+
+          return { content: combined || "Command executed successfully", isError: false };
+        } catch (error) {
           return {
-            content: `Command exited with code ${code}:\n${combined}`,
+            content: `Command execution failed: ${error instanceof Error ? error.message : String(error)}`,
             isError: true,
           };
         }
-
-        return { content: combined || "Command executed successfully", isError: false };
       }
 
       case "search_files": {
@@ -490,17 +510,15 @@ export async function executeTool(
         let output = new TextDecoder().decode(stdout);
         const errorOutput = new TextDecoder().decode(stderr);
 
-        // Limit output to prevent context explosion (max 100 lines or 5000 chars)
+        // Limit output to prevent context explosion
         const lines = output.split('\n');
-        const MAX_LINES = 100;
-        const MAX_CHARS = 5000;
 
-        if (lines.length > MAX_LINES) {
-          output = lines.slice(0, MAX_LINES).join('\n') +
-            `\n\n... [${lines.length - MAX_LINES} more matches truncated]`;
-        } else if (output.length > MAX_CHARS) {
-          output = output.slice(0, MAX_CHARS) +
-            `\n\n... [output truncated at ${MAX_CHARS} characters]`;
+        if (lines.length > SEARCH_RESULT_LIMIT) {
+          output = lines.slice(0, SEARCH_RESULT_LIMIT).join('\n') +
+            `\n\n... [${lines.length - SEARCH_RESULT_LIMIT} more matches truncated]`;
+        } else if (output.length > SEARCH_CONTENT_LIMIT) {
+          output = output.slice(0, SEARCH_CONTENT_LIMIT) +
+            `\n\n... [output truncated at ${SEARCH_CONTENT_LIMIT} characters]`;
         }
 
         return {
