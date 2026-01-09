@@ -28,8 +28,8 @@ export const definition: ToolDefinition = {
       },
       search_path: {
         type: "string",
-        description: "Path to search in relative to project root (default: '.' for entire project)",
-        default: "."
+        description: "Absolute path to search within project (default: '/' for entire project)",
+        default: "/"
       },
     },
     required: ["pattern"],
@@ -47,8 +47,8 @@ export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
   }
 
   try {
-    // Default to current directory if path not provided
-    const searchPath = input.search_path || ".";
+    // Default to root directory if path not provided
+    const searchPath = input.search_path || "/";
 
     // Execute grep command
     const process = new Deno.Command("grep", {

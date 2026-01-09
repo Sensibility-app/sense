@@ -24,8 +24,8 @@ export const definition: ToolDefinition = {
     properties: {
       dir_path: {
         type: "string",
-        description: "Path to directory relative to project root (use '.' for project root, 'server' for server directory, etc.)",
-        default: "."
+        description: "Absolute path to directory within project (use '/' for project root, '/server' for server directory, etc.)",
+        default: "/"
       },
     },
     required: [],
@@ -35,14 +35,14 @@ export const definition: ToolDefinition = {
 
 export const executor: ToolExecutor = async (input): Promise<ToolResult> => {
   try {
-    // Default to current directory if path not provided or empty
+    // Default to root directory if path not provided or empty
     const pathInput = (input.dir_path && typeof input.dir_path === "string" && input.dir_path.trim())
       ? input.dir_path.trim()
-      : ".";
+      : "/";
 
     if (typeof pathInput !== "string") {
       return {
-        content: `dir_path must be a string, received "${typeof pathInput}". Use "." for project root, or specify a subdirectory like "client" or "server".`,
+        content: `dir_path must be a string, received "${typeof pathInput}". Use "/" for project root, or specify a subdirectory like "/client" or "/server".`,
         isError: true,
       };
     }

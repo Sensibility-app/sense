@@ -23,7 +23,7 @@ export const definition: ToolDefinition = {
     properties: {
       file_path: {
         type: "string",
-        description: "Path to the file relative to project root"
+        description: "Absolute path to file within project (e.g., '/server/main.ts')"
       },
       old_str: {
         type: "string",

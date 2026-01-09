@@ -13,12 +13,20 @@ const BASE_DIR = Deno.cwd();
  * Ensure path is safe and within project
  * Prevents path traversal attacks
  *
- * @param path - Relative or absolute path
- * @returns Absolute path within project root
+ * Accepts two formats:
+ * - Absolute within project: /server/main.ts (leading slash)
+ * - Relative to project: server/main.ts (no leading slash)
+ *
+ * @param path - Path within project (e.g., "/server/main.ts" or "server/main.ts")
+ * @returns Absolute filesystem path within project root
  * @throws Error if path traversal detected
  */
 export function sanitizePath(path: string): string {
-  const resolved = join(BASE_DIR, path);
+  // Remove leading slash if present (converts absolute project path to relative)
+  // Special case: "/" means project root
+  const cleanPath = path === "/" ? "" : (path.startsWith('/') ? path.slice(1) : path);
+
+  const resolved = join(BASE_DIR, cleanPath);
   if (!resolved.startsWith(BASE_DIR)) {
     throw new Error("Path traversal detected");
   }
