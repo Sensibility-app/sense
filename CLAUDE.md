@@ -35,7 +35,7 @@ Claude has access to these MCP-style tools:
 - **create_file** - Create new files (auto-creates directories)
 - **edit_file** - Edit files by exact string replacement
 - **glob** - Find files by pattern (*.ts, **/*.js, etc.)
-- **execute_command** - Run shell commands (git, deno, tests, etc.) in sandboxed environment
+- **eval** - Execute TypeScript/JavaScript code with Deno APIs
 - **search_files** - Search for patterns with grep
 - **reload_server** - Trigger server reload
 
