@@ -1,14 +1,16 @@
 /**
  * In-memory TypeScript transpilation with caching
  *
- * This module provides TypeScript → JavaScript transpilation using the
- * TypeScript compiler, with hash-based caching for performance.
+ * This module provides TypeScript → JavaScript transpilation using Deno's
+ * official @deno/emit module, with hash-based caching for performance.
  *
  * Each .ts file is transpiled individually and served as a separate .js module,
  * letting the browser handle ES6 module imports naturally.
+ *
+ * Uses JSR imports for evergreen deployment (runtime importable, no restart needed).
  */
 
-import * as ts from "npm:typescript@5.7.3";
+import { transpile } from "jsr:@deno/emit";
 import { crypto } from "jsr:@std/crypto@1.0.3";
 import { encodeHex } from "jsr:@std/encoding@1.0.5/hex";
 import { log, error as logError } from "./logger.ts";
@@ -79,59 +81,33 @@ function replaceImportExtensions(code: string): string {
 
 
 /**
- * Transpile TypeScript source code to JavaScript
+ * Transpile TypeScript source code to JavaScript using @deno/emit
  *
- * @param tsCode - TypeScript source code
- * @param filepath - File path (for error messages)
- * @returns Transpiled JavaScript code
+ * @param filepath - Absolute file path to transpile
+ * @returns Transpiled JavaScript code with .ts → .js import rewriting
  * @throws Error if transpilation fails
  */
-function transpileTypeScript(tsCode: string, filepath: string): string {
-  // TypeScript compiler options optimized for browser
-  const compilerOptions: ts.CompilerOptions = {
-    target: ts.ScriptTarget.ES2020,
-    module: ts.ModuleKind.ES2020,
-    lib: ["ES2020", "DOM"],
-    strict: false, // Don't block on type errors (JavaScript is still valid)
-    esModuleInterop: true,
-    skipLibCheck: true,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    allowSyntheticDefaultImports: true,
-    removeComments: false,
-    sourceMap: false, // In-memory, no source maps for now
-  };
+async function transpileTypeScript(filepath: string): Promise<string> {
+  try {
+    // Convert file path to file:// URL for @deno/emit
+    const url = new URL(`file://${filepath}`);
 
-  // Transpile TypeScript to JavaScript
-  const result = ts.transpileModule(tsCode, {
-    compilerOptions,
-    fileName: filepath,
-    reportDiagnostics: true,
-  });
+    // Transpile using @deno/emit
+    const result = await transpile(url);
 
-  // Check for errors (syntax errors, not type errors)
-  if (result.diagnostics && result.diagnostics.length > 0) {
-    const errors = result.diagnostics
-      .filter((d) => d.category === ts.DiagnosticCategory.Error)
-      .map((d) => {
-        const message = ts.flattenDiagnosticMessageText(d.messageText, "\n");
-        if (d.file && d.start !== undefined) {
-          const { line, character } = d.file.getLineAndCharacterOfPosition(
-            d.start,
-          );
-          return `${filepath}:${line + 1}:${character + 1} - ${message}`;
-        }
-        return message;
-      });
+    // Get the transpiled code
+    const jsCode = result.get(url.href);
 
-    if (errors.length > 0) {
-      throw new Error(`TypeScript transpilation failed:\n${errors.join("\n")}`);
+    if (!jsCode) {
+      throw new Error(`Transpilation produced no output for ${filepath}`);
     }
+
+    // Replace .ts with .js in import paths for browser compatibility
+    return replaceImportExtensions(jsCode);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    throw new Error(`TypeScript transpilation failed for ${filepath}: ${errorMessage}`);
   }
-
-  // Replace .ts with .js in import paths
-  const jsCode = replaceImportExtensions(result.outputText);
-
-  return jsCode;
 }
 
 /**
@@ -146,14 +122,19 @@ function transpileTypeScript(tsCode: string, filepath: string): string {
  */
 export async function transpileFile(filepath: string): Promise<string> {
   try {
+    // Convert to absolute path for consistent caching
+    const absolutePath = filepath.startsWith("/")
+      ? filepath
+      : new URL(filepath, `file://${Deno.cwd()}/`).pathname;
+
     // Read source file
-    const tsCode = await Deno.readTextFile(filepath);
+    const tsCode = await Deno.readTextFile(absolutePath);
 
     // Calculate hash of source
     const sourceHash = await hashSource(tsCode);
 
-    // Check cache
-    const cached = cache.get(filepath, sourceHash);
+    // Check cache (use absolute path as key)
+    const cached = cache.get(absolutePath, sourceHash);
     if (cached) {
       // Cache hit - return immediately
       return cached;
@@ -163,13 +144,13 @@ export async function transpileFile(filepath: string): Promise<string> {
     log(`📦 Transpiling ${filepath}...`);
     const startTime = performance.now();
 
-    const jsCode = transpileTypeScript(tsCode, filepath);
+    const jsCode = await transpileTypeScript(absolutePath);
 
     const duration = (performance.now() - startTime).toFixed(0);
     log(`✅ Transpilation complete (${duration}ms, ${jsCode.length} bytes)`);
 
     // Cache the result
-    cache.set(filepath, sourceHash, jsCode);
+    cache.set(absolutePath, sourceHash, jsCode);
 
     return jsCode;
   } catch (err) {
@@ -177,8 +158,13 @@ export async function transpileFile(filepath: string): Promise<string> {
     const errorMessage = err instanceof Error ? err.message : String(err);
     logError(`❌ TypeScript transpilation error for ${filepath}:`, errorMessage);
 
+    // Convert to absolute path to check cache
+    const absolutePath = filepath.startsWith("/")
+      ? filepath
+      : new URL(filepath, `file://${Deno.cwd()}/`).pathname;
+
     // Try to return last cached version (any hash)
-    const entry = (cache as any).cache.get(filepath);
+    const entry = (cache as any).cache.get(absolutePath);
     if (entry) {
       logError("⚠️  Serving last known good version from cache");
       return entry.transpiledCode;
