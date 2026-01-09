@@ -1,7 +1,25 @@
+# Session data and logs
 .sense/
-.env
 *.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Dependencies
 node_modules/
 
-# IMPORTANT: hello.md should NEVER be added to .gitignore
-# This file must remain tracked and protected
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Transpiled client JavaScript (generated in-memory by server)
+client/client.js
+client/client.js.map

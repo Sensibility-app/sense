@@ -5,6 +5,7 @@ import { PersistentSession, archiveCurrentSession } from "./persistent-session.t
 import { formatSessionHistory, getLastUserMessage, type DisplayMessage } from "./session-formatter.ts";
 import { log, error } from "./logger.ts";
 import { tokenTracker } from "./token-tracker.ts";
+import { getTranspiledClient } from "./transpile.ts";
 
 // Load .env file
 await load({ export: true });
@@ -34,7 +35,8 @@ type ClientMessage =
   | { type: "archive_session" }
   | { type: "clear_session" }
   | { type: "git.status" }
-  | { type: "git.diff" };
+  | { type: "git.diff" }
+  | { type: "ping" };
 
 type ServerMessage =
   // State updates (header only)
@@ -58,7 +60,10 @@ type ServerMessage =
   | { type: "tool_activity"; toolName: string; status: "started" | "completed" | "error"; preview?: string; toolId?: string }
   
   // Task lifecycle
-  | { type: "task_complete"; summary: string };
+  | { type: "task_complete"; summary: string }
+  
+  // Heartbeat
+  | { type: "pong" };
 
 const PORT = 8080;
 
@@ -290,6 +295,12 @@ function handleWebSocket(socket: WebSocket) {
   socket.onmessage = async (event) => {
     try {
       const message: ClientMessage = JSON.parse(event.data);
+
+      // Handle ping messages for heartbeat
+      if (message.type === "ping") {
+        sendToClient({ type: "pong" as any });
+        return;
+      }
 
       if (message.type === "stop_task") {
         // Stop any currently running task
@@ -566,16 +577,27 @@ function handleWebSocket(socket: WebSocket) {
                 });
                 currentToolId = null;
               } else if (chunk.type === "token_usage") {
-                // Broadcast token usage to all clients
+                // Broadcast token usage to all clients (including cache metrics)
                 if (chunk.tokenUsage) {
+                  const usage = chunk.tokenUsage;
+                  let formatted = `${usage.totalTokens.toLocaleString()} tokens (${usage.inputTokens.toLocaleString()} in, ${usage.outputTokens.toLocaleString()} out)`;
+
+                  // Add cache information if available
+                  if (usage.cacheCreationInputTokens && usage.cacheCreationInputTokens > 0) {
+                    formatted += ` | 📝 Cache created: ${usage.cacheCreationInputTokens.toLocaleString()}`;
+                  }
+                  if (usage.cacheReadInputTokens && usage.cacheReadInputTokens > 0) {
+                    formatted += ` | ⚡ Cache hit: ${usage.cacheReadInputTokens.toLocaleString()}`;
+                  }
+
                   broadcast({
                     type: "token_usage",
                     usage: {
-                      inputTokens: chunk.tokenUsage.inputTokens,
-                      outputTokens: chunk.tokenUsage.outputTokens,
-                      totalTokens: chunk.tokenUsage.totalTokens,
+                      inputTokens: usage.inputTokens,
+                      outputTokens: usage.outputTokens,
+                      totalTokens: usage.totalTokens,
                     },
-                    formatted: `${chunk.tokenUsage.totalTokens.toLocaleString()} tokens (${chunk.tokenUsage.inputTokens.toLocaleString()} in, ${chunk.tokenUsage.outputTokens.toLocaleString()} out)`
+                    formatted
                   });
                 }
               } else if ((chunk as any).type === "conversation_history") {
@@ -689,7 +711,7 @@ function handleWebSocket(socket: WebSocket) {
 }
 
 // HTTP server
-Deno.serve({ port: PORT }, (req) => {
+Deno.serve({ port: PORT }, async (req) => {
   const url = new URL(req.url);
 
   // Upgrade WebSocket connections
@@ -697,6 +719,39 @@ Deno.serve({ port: PORT }, (req) => {
     const { socket, response } = Deno.upgradeWebSocket(req);
     handleWebSocket(socket);
     return response;
+  }
+
+  // Intercept /client/client.js to serve transpiled TypeScript
+  if (url.pathname === "/client/client.js") {
+    try {
+      const result = await getTranspiledClient();
+
+      if (result.error) {
+        error("⚠️  TypeScript transpilation error:", result.error);
+        error("📦 Serving last known good version");
+      }
+
+      return new Response(result.code, {
+        headers: {
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "no-cache, no-store, must-revalidate", // Always fresh in dev
+          "X-Transpiled": "true", // Debug header
+        },
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      error("❌ Failed to transpile client.ts:", errorMessage);
+
+      return new Response(
+        `// TypeScript transpilation failed\n// Error: ${errorMessage}\nconsole.error("Failed to load client code:", ${JSON.stringify(errorMessage)});`,
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/javascript; charset=utf-8",
+          },
+        },
+      );
+    }
   }
 
   // Serve static files

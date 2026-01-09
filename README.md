@@ -20,6 +20,17 @@ A browser-based IDE that integrates Claude's native tool use capabilities for se
    - Enter tasks like "add a clear button to the UI"
    - Watch Claude use tools to complete the task autonomously
 
+## ⚠️ Security Notice
+
+**IMPORTANT:** If you cloned this repository before January 2026, an API key may have been exposed in git history.
+
+**Action Required:**
+1. 🔄 **Rotate your Anthropic API key** at https://console.anthropic.com/
+2. 🔒 Never commit `.env` files (already in `.gitignore`)
+3. 🏠 Only run Sense on localhost or trusted private networks
+
+Sense is a **single-user development tool** with no authentication. See [SECURITY.md](SECURITY.md) for complete security information.
+
 ## How It Works
 
 Sense doesn't build a custom agent - it provides **MCP-style tools** that Claude uses through its native tool use API:
@@ -70,10 +81,40 @@ deno task dev
 deno task test
 ```
 
+### TypeScript Client Architecture
+
+The client code is written in **TypeScript** (`client/client.ts`) and automatically transpiled to JavaScript in-memory by the server.
+
+**How It Works:**
+1. Browser requests `/client/client.js`
+2. Server reads `client/client.ts` from disk
+3. Server transpiles TypeScript → JavaScript in-memory (using TypeScript compiler)
+4. Server caches result (keyed by source code hash)
+5. Server serves JavaScript to browser
+6. On next request: serves cached version if source unchanged
+
+**Key Features:**
+- ✅ **Zero-build deployment**: No pre-compilation required, `git pull && restart` works immediately
+- ✅ **In-memory transpilation**: ~115ms first load, <10ms cached
+- ✅ **Hash-based caching**: Only re-transpiles when source changes
+- ✅ **Claude-friendly**: Agent can edit TypeScript sources directly without build awareness
+- ✅ **Safe fallback**: If transpilation fails, serves last known good version
+
+**File Organization:**
+- `client/client.ts` - TypeScript source (committed to git, edit this)
+- `client/client.js` - JavaScript output (NOT committed, generated in-memory)
+- Cache cleared automatically on server restart
+
+**Development Flow:**
+```
+Edit client.ts → Save → Server restarts → Cache cleared →
+Next request transpiles → Browser receives new JavaScript
+```
+
 ## Project Structure
 
 - `/server` - Deno WebSocket server with Claude integration
-- `/client` - Browser UI (HTML/CSS/JS)
+- `/client` - Browser UI (HTML/CSS/TypeScript)
 - `/.sense/sessions` - Task execution logs
 
 ## Self-Hosting
@@ -92,6 +133,7 @@ The system can evolve itself through the same interface you use to build other p
 
 ## Documentation
 
+- **[SECURITY.md](SECURITY.md)** - Security model, limitations, and best practices
 - **[TOOLS.md](TOOLS.md)** - Complete tool reference with examples and best practices
 - **[CLAUDE.md](CLAUDE.md)** - Instructions for Claude Code when working with this repo
 - **[MOBILE.md](MOBILE.md)** - PWA setup for mobile devices
