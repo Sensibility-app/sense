@@ -31,13 +31,11 @@ Browser UI ←→ WebSocket Server ←→ Claude API (with tools)
 
 Claude has access to these MCP-style tools:
 
-- **read_file** - Read file contents
+- **read_file** - Read file contents (with optional offset/limit for ranges)
 - **create_file** - Create new files (auto-creates directories)
 - **edit_file** - Edit files by exact string replacement
-- **read_file_range** - Read specific line ranges
-- **edit_file_range** - Replace line ranges (RECOMMENDED for multi-line edits)
-- **list_directory** - List directory contents
-- **execute_command** - Run shell commands (git, deno, tests, etc.)
+- **glob** - Find files by pattern (*.ts, **/*.js, etc.)
+- **execute_command** - Run shell commands (git, deno, tests, etc.) in sandboxed environment
 - **search_files** - Search for patterns with grep
 - **reload_server** - Trigger server reload
 
