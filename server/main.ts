@@ -5,7 +5,7 @@ import { PersistentSession, archiveCurrentSession } from "./persistent-session.t
 import { formatSessionHistory, getLastUserMessage, type DisplayMessage } from "./session-formatter.ts";
 import { log, error } from "./logger.ts";
 import { tokenTracker } from "./token-tracker.ts";
-import { getTranspiledClient } from "./transpile.ts";
+import { transpileFile } from "./transpile.ts";
 
 // Load .env file
 await load({ export: true });
@@ -721,17 +721,16 @@ Deno.serve({ port: PORT }, async (req) => {
     return response;
   }
 
-  // Intercept /client/client.js to serve transpiled TypeScript
-  if (url.pathname === "/client/client.js") {
+  // Intercept /client/*.js to serve transpiled TypeScript modules
+  if (url.pathname.startsWith("/client/") && url.pathname.endsWith(".js")) {
     try {
-      const result = await getTranspiledClient();
+      // Map .js to .ts file (e.g., /client/client.js -> ./client/client.ts)
+      const jsFilename = url.pathname.slice(1); // Remove leading /
+      const tsFilepath = `./${jsFilename.replace(/\.js$/, ".ts")}`;
 
-      if (result.error) {
-        error("⚠️  TypeScript transpilation error:", result.error);
-        error("📦 Serving last known good version");
-      }
+      const jsCode = await transpileFile(tsFilepath);
 
-      return new Response(result.code, {
+      return new Response(jsCode, {
         headers: {
           "Content-Type": "application/javascript; charset=utf-8",
           "Cache-Control": "no-cache, no-store, must-revalidate", // Always fresh in dev
@@ -740,10 +739,10 @@ Deno.serve({ port: PORT }, async (req) => {
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      error("❌ Failed to transpile client.ts:", errorMessage);
+      error(`❌ Failed to transpile TypeScript:`, errorMessage);
 
       return new Response(
-        `// TypeScript transpilation failed\n// Error: ${errorMessage}\nconsole.error("Failed to load client code:", ${JSON.stringify(errorMessage)});`,
+        `// TypeScript transpilation failed\n// Error: ${errorMessage}\nconsole.error("Failed to load module:", ${JSON.stringify(errorMessage)});`,
         {
           status: 500,
           headers: {

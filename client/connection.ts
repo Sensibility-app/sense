@@ -19,11 +19,9 @@ export function setupConnection(
   onProcessingChange: (isProcessing: boolean) => void,
   statusEl: HTMLElement
 ) {
-  console.log("[setupConnection] statusEl:", statusEl);
   messageHandler = onMessage;
   processingHandler = onProcessingChange;
   statusElement = statusEl;
-  console.log("[setupConnection] statusElement set to:", statusElement);
 }
 
 /**
@@ -34,10 +32,8 @@ export function connect() {
   state.ws = new WebSocket(`${protocol}//${window.location.host}`);
 
   state.ws.onopen = () => {
-    console.log("[WebSocket] onopen fired");
     state.connectionState = "connected";
     state.reconnectAttempts = 0;
-    console.log("[WebSocket] About to call updateConnectionStatus");
     updateConnectionStatus("connected");
     startHeartbeat();
   };
@@ -92,9 +88,8 @@ export function connect() {
  * Update connection status in header
  */
 function updateConnectionStatus(status: string) {
-  console.log("[updateConnectionStatus] called with status:", status, "statusElement:", statusElement);
   if (!statusElement) {
-    console.error("[updateConnectionStatus] statusElement is null or undefined!");
+    console.error("Status element not initialized");
     return;
   }
 

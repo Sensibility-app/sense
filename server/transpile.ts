@@ -3,16 +3,15 @@
  *
  * This module provides TypeScript → JavaScript transpilation using the
  * TypeScript compiler, with hash-based caching for performance.
+ *
+ * Each .ts file is transpiled individually and served as a separate .js module,
+ * letting the browser handle ES6 module imports naturally.
  */
 
 import * as ts from "npm:typescript@5.7.3";
 import { crypto } from "jsr:@std/crypto@1.0.3";
 import { encodeHex } from "jsr:@std/encoding@1.0.5/hex";
-import { join, dirname } from "jsr:@std/path@^1.0.0";
 import { log, error as logError } from "./logger.ts";
-
-const CLIENT_TS_PATH = "./client/client.ts";
-const CLIENT_DIR = "./client";
 
 interface CacheEntry {
   sourceHash: string;
@@ -69,148 +68,15 @@ async function hashSource(source: string): Promise<string> {
 }
 
 /**
- * Extract import statements from TypeScript source
- * Returns array of imported file paths
+ * Replace .ts extensions with .js in import statements
  */
-function extractImports(source: string, currentFile: string): string[] {
-  const imports: string[] = [];
-
-  // Match: import ... from "./file.ts"
-  // Match: import ... from './file.ts'
-  // Use [\s\S] to match newlines in multi-line imports
-  const importRegex = /import\s+[\s\S]*?\s+from\s+['"](.+?)['"]/g;
-
-  let match;
-  while ((match = importRegex.exec(source)) !== null) {
-    const importPath = match[1];
-
-    // Only process relative imports (starting with ./ or ../)
-    if (importPath.startsWith('./') || importPath.startsWith('../')) {
-      // Resolve relative to current file's directory
-      const currentDir = dirname(currentFile);
-      const resolvedPath = join(currentDir, importPath);
-      imports.push(resolvedPath);
-    }
-  }
-
-  return imports;
+function replaceImportExtensions(code: string): string {
+  // Replace import paths ending with .ts to .js
+  return code.replace(/from\s+['"](.+?)\.ts['"]/g, 'from "$1.js"');
 }
 
-/**
- * Recursively collect all TypeScript module sources
- * Returns Map of filepath → source code
- */
-async function collectModuleSources(
-  entryPoint: string,
-  visited = new Set<string>()
-): Promise<Map<string, string>> {
-  const sources = new Map<string, string>();
 
-  // Prevent infinite loops
-  if (visited.has(entryPoint)) {
-    return sources;
-  }
-  visited.add(entryPoint);
 
-  try {
-    // Read the file
-    const source = await Deno.readTextFile(entryPoint);
-
-    // Extract imports from this file
-    const imports = extractImports(source, entryPoint);
-
-    // Recursively collect imported modules (dependencies first)
-    for (const importPath of imports) {
-      const importedSources = await collectModuleSources(importPath, visited);
-      // Merge imported sources (dependencies first)
-      for (const [path, src] of importedSources) {
-        sources.set(path, src);
-      }
-    }
-
-    // Add current file AFTER its dependencies
-    sources.set(entryPoint, source);
-  } catch (err) {
-    logError(`Failed to read module ${entryPoint}:`, err);
-    throw new Error(`Module not found: ${entryPoint}`);
-  }
-
-  return sources;
-}
-
-/**
- * Bundle multiple TypeScript modules into a single JavaScript output
- * Uses TypeScript compiler to handle module resolution and bundling
- */
-async function bundleModules(entryPoint: string): Promise<string> {
-  // Collect all module sources
-  const moduleSources = await collectModuleSources(entryPoint);
-
-  log(`📦 Bundling ${moduleSources.size} module(s)...`);
-
-  // Create a virtual file system for TypeScript compiler
-  const fileNames = Array.from(moduleSources.keys());
-
-  // Compiler options for bundling
-  const compilerOptions: ts.CompilerOptions = {
-    target: ts.ScriptTarget.ES2020,
-    module: ts.ModuleKind.ES2020,
-    lib: ["ES2020", "DOM"],
-    strict: false,
-    esModuleInterop: true,
-    skipLibCheck: true,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    allowSyntheticDefaultImports: true,
-    removeComments: false,
-    sourceMap: false,
-    outFile: undefined, // Don't use outFile, handle manually
-  };
-
-  // Create a simple in-memory bundler by inlining all modules
-  // This approach: transpile each module and concatenate them
-  const transpiledModules: string[] = [];
-
-  for (const [filepath, source] of moduleSources) {
-    try {
-      const result = ts.transpileModule(source, {
-        compilerOptions,
-        fileName: filepath,
-        reportDiagnostics: true,
-      });
-
-      // Check for errors
-      if (result.diagnostics && result.diagnostics.length > 0) {
-        const errors = result.diagnostics
-          .filter((d) => d.category === ts.DiagnosticCategory.Error)
-          .map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"));
-
-        if (errors.length > 0) {
-          throw new Error(`${filepath}: ${errors.join("\n")}`);
-        }
-      }
-
-      // Remove import/export statements for bundling
-      // This is a simple approach: convert exports to const declarations
-      let code = result.outputText;
-
-      // Remove "export " keywords but keep the declarations
-      code = code.replace(/export\s+/g, '');
-
-      // Remove import statements (they're already resolved)
-      code = code.replace(/import\s+.*?from\s+['"].*?['"];?\n?/g, '');
-
-      transpiledModules.push(`// Module: ${filepath}\n${code}\n`);
-    } catch (err) {
-      throw new Error(`Failed to transpile ${filepath}: ${err}`);
-    }
-  }
-
-  // Combine all modules into single output
-  // Wrap in IIFE to avoid global scope pollution
-  const bundled = `(function() {\n${transpiledModules.join('\n')}\n})();`;
-
-  return bundled;
-}
 
 /**
  * Transpile TypeScript source code to JavaScript
@@ -262,76 +128,73 @@ function transpileTypeScript(tsCode: string, filepath: string): string {
     }
   }
 
-  return result.outputText;
+  // Replace .ts with .js in import paths
+  const jsCode = replaceImportExtensions(result.outputText);
+
+  return jsCode;
 }
 
 /**
- * Get transpiled client JavaScript from client.ts
+ * Transpile a TypeScript file to JavaScript
  *
- * Reads client.ts (and any imported modules), checks cache, transpiles/bundles
- * if needed, and returns JavaScript. If transpilation fails, returns last
- * known good version (if available).
+ * Reads a .ts file, checks cache, transpiles if needed, and returns JavaScript.
+ * Import paths are automatically rewritten from .ts to .js for browser compatibility.
  *
- * @returns Object with transpiled code and optional error message
+ * @param filepath - Path to TypeScript file (e.g., "./client/client.ts")
+ * @returns Transpiled JavaScript code
+ * @throws Error if file read or transpilation fails
  */
-export async function getTranspiledClient(): Promise<
-  { code: string; error?: string }
-> {
+export async function transpileFile(filepath: string): Promise<string> {
   try {
-    // Collect all module sources (including imports)
-    const moduleSources = await collectModuleSources(CLIENT_TS_PATH);
+    // Read source file
+    const tsCode = await Deno.readTextFile(filepath);
 
-    // Calculate combined hash of all sources
-    const combinedSource = Array.from(moduleSources.values()).join('\n---\n');
-    const sourceHash = await hashSource(combinedSource);
+    // Calculate hash of source
+    const sourceHash = await hashSource(tsCode);
 
     // Check cache
-    const cached = cache.get(CLIENT_TS_PATH, sourceHash);
+    const cached = cache.get(filepath, sourceHash);
     if (cached) {
       // Cache hit - return immediately
-      return { code: cached };
+      return cached;
     }
 
-    // Cache miss - bundle and transpile TypeScript modules
-    log(`📦 Transpiling client (${moduleSources.size} module(s))...`);
+    // Cache miss - transpile TypeScript
+    log(`📦 Transpiling ${filepath}...`);
     const startTime = performance.now();
 
-    const jsCode = await bundleModules(CLIENT_TS_PATH);
+    const jsCode = transpileTypeScript(tsCode, filepath);
 
     const duration = (performance.now() - startTime).toFixed(0);
     log(`✅ Transpilation complete (${duration}ms, ${jsCode.length} bytes)`);
 
     // Cache the result
-    cache.set(CLIENT_TS_PATH, sourceHash, jsCode);
+    cache.set(filepath, sourceHash, jsCode);
 
-    return { code: jsCode };
+    return jsCode;
   } catch (err) {
     // Transpilation or file read failed
     const errorMessage = err instanceof Error ? err.message : String(err);
-    logError("❌ TypeScript transpilation error:", errorMessage);
+    logError(`❌ TypeScript transpilation error for ${filepath}:`, errorMessage);
 
     // Try to return last cached version (any hash)
-    const entries = Array.from((cache as any).cache.values());
-    if (entries.length > 0) {
-      const lastEntry = entries[entries.length - 1] as CacheEntry;
+    const entry = (cache as any).cache.get(filepath);
+    if (entry) {
       logError("⚠️  Serving last known good version from cache");
-      return {
-        code: lastEntry.transpiledCode,
-        error: errorMessage,
-      };
+      return entry.transpiledCode;
     }
 
     // No cached version available - return error
-    throw new Error(`Cannot transpile client.ts: ${errorMessage}`);
+    throw new Error(`Cannot transpile ${filepath}: ${errorMessage}`);
   }
 }
 
 /**
  * Invalidate cache for a specific file
  */
-export function invalidateClientCache(): void {
-  cache.invalidate(CLIENT_TS_PATH);
-  log("🗑️  Client transpilation cache invalidated");
+export function invalidateCache(filepath: string): void {
+  cache.invalidate(filepath);
+  log(`🗑️  Transpilation cache invalidated for ${filepath}`);
 }
 
 /**
