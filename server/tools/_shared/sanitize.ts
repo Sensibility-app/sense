@@ -85,3 +85,41 @@ export function sanitizeErrorMessage(error: unknown): string {
 
   return sanitized;
 }
+
+/**
+ * Convert relative or project-relative path to absolute filesystem path
+ *
+ * Handles:
+ * - Absolute filesystem paths: /home/user/project/file.ts → unchanged
+ * - Relative paths: ./client/app.ts → /home/user/project/client/app.ts
+ * - Project-relative: client/app.ts → /home/user/project/client/app.ts
+ *
+ * @param filepath - Path in any format
+ * @returns Absolute filesystem path
+ */
+export function toAbsolutePath(filepath: string): string {
+  // Already absolute filesystem path
+  if (filepath.startsWith(BASE_DIR)) {
+    return filepath;
+  }
+
+  // Relative path - resolve against cwd
+  if (filepath.startsWith("./") || filepath.startsWith("../") || !filepath.startsWith("/")) {
+    return new URL(filepath, `file://${BASE_DIR}/`).pathname;
+  }
+
+  // Project-absolute path (starts with / but not full filesystem path)
+  // /server/main.ts → /home/user/project/server/main.ts
+  return join(BASE_DIR, filepath.slice(1));
+}
+
+/**
+ * Map .js HTTP request path to .ts source file path
+ * Used for transpilation routing
+ *
+ * @param jsPath - Path ending in .js (e.g., "/client/app.js" or "./client/app.js")
+ * @returns Corresponding .ts file path
+ */
+export function mapJsToTs(jsPath: string): string {
+  return jsPath.replace(/\.js$/, ".ts");
+}

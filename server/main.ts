@@ -2,7 +2,7 @@ import { load } from "jsr:@std/dotenv@^0.225.0";
 import { continueConversation } from "./claude.ts";
 import { PersistentSession, archiveCurrentSession, formatSessionHistory, getLastUserMessage, type DisplayMessage } from "./persistent-session.ts";
 import { log, error } from "./logger.ts";
-import { setTranspileCallback } from "./transpile.ts";
+import { setTranspileCallback, transpileFile } from "./transpile.ts";
 import { type ClientMessage, type ServerMessage, formatTokenUsage } from "./server-types.ts";
 import { serveStaticFile } from "./file-server.ts";
 // === Agent execution context ===
@@ -381,16 +381,6 @@ function handleAgentEvent(chunk: any): void {
   }
 }
 
-// Handle slash commands
-function handleSlashCommand(command: string): { handled: boolean; type?: string } {
-  const trimmedCommand = command.trim().toLowerCase();
-  
-  if (trimmedCommand === "/clear") {
-    return { handled: true, type: "clear_session" };
-  }
-  
-  return { handled: false };
-}
 
 // Handle WebSocket connections
 function handleWebSocket(socket: WebSocket) {
@@ -537,16 +527,6 @@ function handleWebSocket(socket: WebSocket) {
       }
 
       if (message.type === "task") {
-        // Check if this is a slash command
-        const slashCommand = handleSlashCommand(message.content);
-        if (slashCommand.handled) {
-          // Handle the slash command by converting it to the appropriate message type
-          const commandMessage = { type: slashCommand.type, content: message.content };
-          // Recursively handle the converted command
-          socket.onmessage?.({ data: JSON.stringify(commandMessage) } as MessageEvent);
-          return;
-        }
-
         const taskContent = message.content;
 
         if (agent.isRunning()) {

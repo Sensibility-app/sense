@@ -51,22 +51,6 @@ let stopBtn: HTMLElement;
 let taskInput: HTMLTextAreaElement;
 let tokenInfo: HTMLElement;
 
-/**
- * Initialize UI renderer with required DOM elements
- */
-function setupUI(
-  outputEl: HTMLElement,
-  submitBtnEl: HTMLElement,
-  stopBtnEl: HTMLElement,
-  taskInputEl: HTMLTextAreaElement,
-  tokenInfoEl: HTMLElement
-) {
-  output = outputEl;
-  submitBtn = submitBtnEl;
-  stopBtn = stopBtnEl;
-  taskInput = taskInputEl;
-  tokenInfo = tokenInfoEl;
-}
 
 /**
  * Scroll output to bottom
@@ -410,15 +394,6 @@ function clearOutput() {
 // Connection state
 let statusElement: HTMLElement;
 let pendingHeartbeatTimeout: number | null = null;
-
-/**
- * Initialize connection module with required dependencies
- */
-function setupConnection(
-  statusEl: HTMLElement
-) {
-  statusElement = statusEl;
-}
 
 /**
  * Connect to WebSocket server
@@ -790,11 +765,13 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
-// Setup UI renderer with DOM elements
-setupUI(outputEl, submitBtnEl, stopBtnEl, taskInputEl, tokenInfoEl);
-
-// Setup connection module with required dependencies
-setupConnection(statusEl);
+// Initialize UI module variables
+output = outputEl;
+submitBtn = submitBtnEl;
+stopBtn = stopBtnEl;
+taskInput = taskInputEl;
+tokenInfo = tokenInfoEl;
+statusElement = statusEl;
 
 // Connect on load
 connect();

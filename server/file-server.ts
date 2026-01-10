@@ -3,6 +3,7 @@
  */
 
 import { transpileFile } from "./transpile.ts";
+import { mapJsToTs } from "./tools/_shared/sanitize.ts";
 
 /**
  * Serve static files with automatic TypeScript transpilation
@@ -15,7 +16,7 @@ export async function serveStaticFile(
   if (pathname.startsWith("/client/") && pathname.endsWith(".js")) {
     try {
       // Map .js to .ts file (e.g., /client/client.js -> ./client/client.ts)
-      const tsPath = `.${pathname.replace(/\.js$/, ".ts")}`;
+      const tsPath = `.${mapJsToTs(pathname)}`;
 
       // Transpile TypeScript to JavaScript
       const { code, fromCache } = await transpileFile(tsPath);

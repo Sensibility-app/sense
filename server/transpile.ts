@@ -14,6 +14,7 @@ import { transpile } from "jsr:@deno/emit";
 import { crypto } from "jsr:@std/crypto@1.0.3";
 import { encodeHex } from "jsr:@std/encoding@1.0.5/hex";
 import { log, error as logError } from "./logger.ts";
+import { toAbsolutePath } from "./tools/_shared/sanitize.ts";
 
 /**
  * Callback for transpilation events
@@ -31,6 +32,16 @@ let onTranspileComplete: TranspileCallback | null = null;
 
 export function setTranspileCallback(callback: TranspileCallback | null) {
   onTranspileComplete = callback;
+}
+
+/**
+ * Safely invoke transpile callback if set
+ * Centralizes null checking
+ */
+function notifyTranspileComplete(filepath: string, fromCache: boolean): void {
+  if (onTranspileComplete) {
+    onTranspileComplete(filepath, fromCache);
+  }
 }
 
 interface CacheEntry {
@@ -106,9 +117,7 @@ async function transpileTypeScript(filepath: string): Promise<string> {
 export async function transpileFile(filepath: string): Promise<{ code: string; fromCache: boolean }> {
   try {
     // Convert to absolute path for consistent caching
-    const absolutePath = filepath.startsWith("/")
-      ? filepath
-      : new URL(filepath, `file://${Deno.cwd()}/`).pathname;
+    const absolutePath = toAbsolutePath(filepath);
 
     // Read source file
     const tsCode = await Deno.readTextFile(absolutePath);
@@ -123,9 +132,7 @@ export async function transpileFile(filepath: string): Promise<{ code: string; f
     const cached = getCached(absolutePath, sourceHash);
     if (cached) {
       // Cache hit - return immediately
-      if (onTranspileComplete) {
-        onTranspileComplete(filepath, true);
-      }
+      notifyTranspileComplete(filepath, true);
       return { code: cached, fromCache: true };
     }
 
@@ -142,9 +149,7 @@ export async function transpileFile(filepath: string): Promise<{ code: string; f
     setCached(absolutePath, sourceHash, jsCode);
 
     // Notify callback about fresh transpilation
-    if (onTranspileComplete) {
-      onTranspileComplete(filepath, false);
-    }
+    notifyTranspileComplete(filepath, false);
 
     return { code: jsCode, fromCache: false };
   } catch (err) {
@@ -153,9 +158,7 @@ export async function transpileFile(filepath: string): Promise<{ code: string; f
     logError(`❌ TypeScript transpilation error for ${filepath}:`, errorMessage);
 
     // Convert to absolute path to check cache
-    const absolutePath = filepath.startsWith("/")
-      ? filepath
-      : new URL(filepath, `file://${Deno.cwd()}/`).pathname;
+    const absolutePath = toAbsolutePath(filepath);
 
     // Try to return last cached version (any hash)
     const entry = cache.get(absolutePath);
