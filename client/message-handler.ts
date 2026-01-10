@@ -157,7 +157,7 @@ export class MessageHandler {
     // Send task message
     if (this.sendMessage("task", task)) {
       this.taskInput.value = "";
-      this.taskInput.style.height = "20px"; // Reset height
+      this.taskInput.style.height = "40px"; // Reset height to default
     }
   }
 
