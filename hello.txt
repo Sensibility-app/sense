@@ -1,1 +1,1 @@
-Hello World
+Hello World - Testing tool display with parameters that are quite long to see if the header properly truncates with ellipsis
