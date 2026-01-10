@@ -50,11 +50,6 @@ export interface ToolPermissions {
  * Use these instead of manually declaring permissions in each tool
  */
 export const PERMISSIONS = {
-  NONE: {
-    filesystem: [] as ("read" | "write")[],
-    network: false,
-    execute: false,
-  },
   READ_ONLY: {
     filesystem: ["read"] as ("read" | "write")[],
     network: false,
@@ -75,22 +70,12 @@ export const PERMISSIONS = {
     network: false,
     execute: true,
   },
-  NETWORK: {
-    filesystem: [] as ("read" | "write")[],
-    network: true,
-    execute: false,
-  },
 } as const;
 
 export interface ToolModule {
   definition: ToolDefinition;
   executor: ToolExecutor;
   permissions: ToolPermissions;
-  metadata?: {
-    author?: string;
-    version?: string;
-    tags?: string[];
-  };
 }
 
 /**
@@ -158,8 +143,7 @@ export function withErrorHandling(executor: ToolExecutor): ToolExecutor {
 export function createTool(
   definition: ToolDefinition,
   permissions: ToolPermissions,
-  executor: ToolExecutor,
-  metadata?: { author?: string; version?: string; tags?: string[] }
+  executor: ToolExecutor
 ): ToolModule {
   // Wrap executor with validation and error handling
   const wrappedExecutor: ToolExecutor = async (input) => {
@@ -175,7 +159,6 @@ export function createTool(
     definition,
     permissions,
     executor: wrappedExecutor,
-    metadata
   };
 }
 

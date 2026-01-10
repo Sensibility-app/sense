@@ -9,7 +9,7 @@ let serverProcess: Deno.ChildProcess | null = null;
 let isRestarting = false;
 
 function startServer() {
-  console.log("🚀 Starting server...");
+  console.log("Starting server...");
   return new Deno.Command("deno", {
     args: ["run", "--allow-all", "server/main.ts"],
     stdout: "inherit",
@@ -26,7 +26,7 @@ async function validateSyntax(): Promise<boolean> {
 
   if (check.code !== 0) {
     const error = new TextDecoder().decode(check.stderr);
-    console.error("❌ Syntax validation failed:");
+    console.error("Syntax validation failed:");
     console.error(error);
     return false;
   }
@@ -38,12 +38,12 @@ async function restartServer() {
   if (isRestarting) return;
   isRestarting = true;
 
-  console.log("\n📝 Files changed, validating syntax...");
+  console.log("\nFiles changed, validating syntax...");
 
   const isValid = await validateSyntax();
 
   if (isValid) {
-    console.log("✅ Syntax valid! Restarting server...\n");
+    console.log("Syntax valid! Restarting server...\n");
 
     if (serverProcess) {
       try {
@@ -56,17 +56,17 @@ async function restartServer() {
 
     serverProcess = startServer();
   } else {
-    console.error("❌ Syntax errors detected. Keeping current server running.");
-    console.error("💡 Fix the errors above and save again.\n");
+    console.error("Syntax errors detected. Keeping current server running.");
+    console.error("Fix the errors above and save again.\n");
   }
 
   isRestarting = false;
 }
 
 // Start initial server
-console.log("🔍 Development server with syntax validation and TypeScript transpilation");
-console.log("📂 Watching: ./server (TypeScript), ./client (TypeScript → JavaScript)");
-console.log("💡 Client TypeScript is transpiled in-memory on request\n");
+console.log("Sense server with validation and hot-reload");
+console.log("Watching: ./server, ./client");
+console.log("Validation enabled - syntax errors won't crash the server\n");
 
 serverProcess = startServer();
 

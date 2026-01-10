@@ -3,6 +3,8 @@
  * Handles deferred reloads when tasks are running
  */
 
+import { log } from "./logger.ts";
+
 export type BroadcastFn = (message: any) => void;
 
 export class ReloadManager {
@@ -10,6 +12,8 @@ export class ReloadManager {
   private pendingReload = false;
   private pendingReason: string | null = null;
   private taskRunning = false;
+  private startupTime: number = Date.now();
+  private STARTUP_GRACE_PERIOD_MS = 15000; // 15 seconds after startup, ignore reloads (iOS needs more time)
 
   /**
    * Set broadcast function for sending messages to clients
@@ -36,8 +40,15 @@ export class ReloadManager {
    * Request a page reload (will be deferred if task is running)
    */
   requestReload(reason: string): void {
+    // Ignore reloads during startup grace period (prevents reload loops on initial load)
+    const timeSinceStartup = Date.now() - this.startupTime;
+    if (timeSinceStartup < this.STARTUP_GRACE_PERIOD_MS) {
+      log(`Ignoring reload during startup grace period: ${reason} (${timeSinceStartup}ms since startup)`);
+      return;
+    }
+
     if (this.taskRunning) {
-      console.log(`⏸️  Deferring reload: ${reason}`);
+      log(`Deferring reload: ${reason}`);
       this.pendingReload = true;
       this.pendingReason = reason;
 
@@ -60,7 +71,7 @@ export class ReloadManager {
   private triggerReload(reason?: string): void {
     if (this.broadcastFn) {
       const reloadReason = reason || this.pendingReason || "Server code changed";
-      console.log(`🔄 Triggering reload: ${reloadReason}`);
+      log(`Triggering reload: ${reloadReason}`);
 
       this.broadcastFn({
         type: "reload_page",

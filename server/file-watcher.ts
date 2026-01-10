@@ -27,14 +27,14 @@ export function setupFileWatcher(
 
           // TypeScript files: transpile first, then reload via callback
           if (changedPath.endsWith('.ts')) {
-            log(`📝 TypeScript file changed: ${changedFile}, triggering transpilation`);
+            log(`TypeScript file changed: ${changedFile}, triggering transpilation`);
 
             try {
               // Trigger proactive transpilation
               // The transpile callback will handle broadcasting reload
               await transpileFile(changedPath);
             } catch (err) {
-              error(`❌ Transpilation failed for ${changedFile}:`, err);
+              error(`Transpilation failed for ${changedFile}:`, err);
 
               // Broadcast error to clients (don't reload on error!)
               broadcast({
@@ -48,7 +48,7 @@ export function setupFileWatcher(
           else if (changedPath.endsWith('.css') ||
                    changedPath.endsWith('.html') ||
                    changedPath.endsWith('.js')) {
-            log(`📝 Client file changed: ${changedFile}`);
+            log(`Client file changed: ${changedFile}`);
             reloadManager.requestReload(`Client file updated: ${changedFile}`);
           }
         }
@@ -57,7 +57,6 @@ export function setupFileWatcher(
       error("File watcher error:", err);
     });
 
-    log("👁️  File watcher enabled for ./client directory");
     return fileWatcher;
   } catch (err) {
     error("Failed to setup file watcher:", err);

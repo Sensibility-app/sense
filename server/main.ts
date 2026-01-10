@@ -15,7 +15,7 @@ await load({ export: true });
 // Global session (shared across all clients)
 const globalSession = new PersistentSession();
 await globalSession.load();
-log(`📂 Session loaded: ${globalSession.getMessages().length} messages`);
+log(`Session loaded: ${globalSession.getMessages().length} messages`);
 
 // Agent execution context
 const agent = new AgentContext();
@@ -28,7 +28,7 @@ const wsHandler = new WebSocketHandler(globalSession, agent);
 
 // AUTO-RESUME: Check if incomplete task exists and auto-resume on server startup
 if (globalSession.needsResume()) {
-  log("🔄 Incomplete task detected - auto-resuming");
+  log("Incomplete task detected - auto-resuming");
 
   // Start in background, don't block server startup
   (async () => {
@@ -36,7 +36,7 @@ if (globalSession.needsResume()) {
       await agent.execute(async (shouldStop) => {
         // Validate and clean conversation history before resuming
         // This fixes any unpaired tool_use/tool_result blocks from interruptions
-        log("🔍 Validating conversation history...");
+        log("Validating conversation history...");
         await globalSession.validateAndCleanHistory();
 
         // Add resume notification
@@ -60,9 +60,9 @@ if (globalSession.needsResume()) {
           wsHandler.handleAgentEvent(chunk);
         }
       });
-      log("✅ Auto-resume completed");
+      log("Auto-resume completed");
     } catch (err) {
-      error("❌ Auto-resume failed:", err);
+      error("Auto-resume failed:", err);
     }
   })();
 }
@@ -77,7 +77,7 @@ setTranspileCallback((filepath: string, fromCache: boolean) => {
   // Only reload on fresh transpilation, not cache hits
   if (!fromCache) {
     const filename = filepath.split('/').pop();
-    log(`🔄 Fresh transpilation complete: ${filename}`);
+    log(`Fresh transpilation complete: ${filename}`);
     reloadManager.requestReload(`TypeScript compiled: ${filename}`);
   }
 });
@@ -95,8 +95,8 @@ agent.setBroadcast(wsHandler.broadcast.bind(wsHandler));
 reloadManager.setBroadcast(wsHandler.broadcast.bind(wsHandler));
 agent.setReloadManager(reloadManager);
 
-// HTTP server
-Deno.serve({ port: PORT }, async (req) => {
+// HTTP server - bind to all interfaces (0.0.0.0) for network access
+Deno.serve({ port: PORT, hostname: "0.0.0.0" }, async (req) => {
   const url = new URL(req.url);
 
   // Upgrade WebSocket connections
@@ -107,12 +107,14 @@ Deno.serve({ port: PORT }, async (req) => {
   }
 
   // Serve static files (handles transpilation automatically)
-  return serveStaticFile(url.pathname, (filepath, fromCache) => {
+  const response = await serveStaticFile(url.pathname, (filepath, fromCache) => {
     if (!fromCache) {
       const filename = filepath.split('/').pop() || filepath;
       reloadManager.requestReload(`File transpiled: ${filename}`);
     }
   });
+
+  return response;
 });
 
 // Setup file watcher for hot reload

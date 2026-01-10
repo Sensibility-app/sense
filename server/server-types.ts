@@ -12,8 +12,6 @@ export type ClientMessage =
   | { type: "stop_task" }
   | { type: "archive_session" }
   | { type: "clear_session" }
-  | { type: "git.status" }
-  | { type: "git.diff" }
   | { type: "ping" };
 
 /**
@@ -34,6 +32,8 @@ export type ServerMessage =
 
   // Tool use messages
   | { type: "tool_use"; toolName: string; toolId: string; toolInput?: unknown }
+  | { type: "tool_start"; toolName: string; toolId: string; toolInput?: unknown }
+  | { type: "tool_complete"; toolName: string; toolId: string; toolInput?: unknown; content: string; isError?: boolean }
   | { type: "tool_result"; toolId: string; content: string; isError: boolean }
 
   // System messages (small, minimal in chat)

@@ -8,6 +8,7 @@ import { continueConversation } from "./claude.ts";
 import { archiveCurrentSession, formatSessionHistory, type PersistentSession } from "./persistent-session.ts";
 import { type ClientMessage, type ServerMessage, formatTokenUsage } from "./server-types.ts";
 import type { AgentContext, BroadcastFn } from "./agent-context.ts";
+import { formatToolAsMarkdown } from "./tools/_shared/tool-formatter.ts";
 
 /**
  * WebSocket handler class
@@ -43,19 +44,18 @@ export class WebSocketHandler {
   handleAgentEvent(chunk: any): void {
     if (chunk.type === "text_delta") {
       this.broadcast({ type: "text_delta", content: chunk.content });
-    } else if (chunk.type === "tool_use") {
-      this.broadcast({
-        type: "tool_use",
+    } else if (chunk.type === "tool_complete") {
+      // Format tool execution as markdown and broadcast as text_delta
+      const markdown = formatToolAsMarkdown({
         toolName: chunk.toolName!,
         toolId: chunk.toolId!,
         toolInput: chunk.toolInput,
-      });
-    } else if (chunk.type === "tool_result") {
-      this.broadcast({
-        type: "tool_result",
-        toolId: chunk.toolId || crypto.randomUUID(),
-        content: chunk.content,
+        toolResult: chunk.content,
         isError: chunk.isError || false,
+      });
+      this.broadcast({
+        type: "text_delta",
+        content: "\n\n" + markdown + "\n\n",
       });
     } else if (chunk.type === "token_usage" && chunk.tokenUsage) {
       this.globalSession.addTokenUsage(chunk.tokenUsage);
@@ -74,63 +74,15 @@ export class WebSocketHandler {
   }
 
   /**
-   * Git status command
-   */
-  private async runGitStatus(): Promise<void> {
-    this.broadcast({ type: "processing_status", isProcessing: true, message: "Running git status..." });
-
-    try {
-      const cmd = new Deno.Command("git", { args: ["status"], cwd: Deno.cwd(), stdout: "piped", stderr: "piped" });
-      const { code, stdout, stderr } = await cmd.output();
-      const output = new TextDecoder().decode(stdout);
-      const errorOutput = new TextDecoder().decode(stderr);
-
-      this.broadcast({ type: "assistant_response", content: code === 0 ? output : errorOutput });
-      this.broadcast({ type: "task_complete", summary: "Git status complete" });
-    } catch (error) {
-      this.broadcast({ type: "system", content: `Git error: ${error instanceof Error ? error.message : String(error)}`, level: "error" });
-    } finally {
-      this.broadcast({ type: "processing_status", isProcessing: false });
-    }
-  }
-
-  /**
-   * Git diff command
-   */
-  private async runGitDiff(): Promise<void> {
-    this.broadcast({ type: "processing_status", isProcessing: true, message: "Running git diff..." });
-
-    try {
-      const cmd = new Deno.Command("git", { args: ["diff"], cwd: Deno.cwd(), stdout: "piped", stderr: "piped" });
-      const { code, stdout, stderr } = await cmd.output();
-      const output = new TextDecoder().decode(stdout);
-      const errorOutput = new TextDecoder().decode(stderr);
-
-      if (code === 0 && output) {
-        this.broadcast({ type: "assistant_response", content: output });
-      } else if (code === 0 && !output) {
-        this.broadcast({ type: "system", content: "No changes to show", level: "info" });
-      } else {
-        this.broadcast({ type: "system", content: `Git diff error: ${errorOutput}`, level: "error" });
-      }
-
-      this.broadcast({ type: "task_complete", summary: "Git diff complete" });
-    } catch (error) {
-      this.broadcast({ type: "system", content: `Git error: ${error instanceof Error ? error.message : String(error)}`, level: "error" });
-    } finally {
-      this.broadcast({ type: "processing_status", isProcessing: false });
-    }
-  }
-
-  /**
    * Handle new WebSocket connection
    */
   handleConnection(socket: WebSocket): void {
-    log("Client connected");
+    // Generate client ID for tracking
+    const clientId = Math.random().toString(36).substring(2, 8);
+    log(`Client ${clientId} connected`);
 
     // Add to connected clients
     this.connectedClients.add(socket);
-    log(`Total connected clients: ${this.connectedClients.size}`);
 
     // Helper to send to just this client
     const sendToClient = (msg: ServerMessage) => {
@@ -138,7 +90,7 @@ export class WebSocketHandler {
         try {
           socket.send(JSON.stringify(msg));
         } catch (err) {
-          error("Failed to send to client:", err);
+          error(`Failed to send to client ${clientId}:`, err);
         }
       }
     };
@@ -163,12 +115,14 @@ export class WebSocketHandler {
       });
     };
 
-    // Send session info immediately if socket is already OPEN
+    // Send session info when socket opens
     if (socket.readyState === WebSocket.OPEN) {
-      sendSessionInfo();
+      sendToClient({ type: "ping" as any });
+      setTimeout(() => sendSessionInfo(), 100);
     } else {
       socket.onopen = () => {
-        sendSessionInfo();
+        sendToClient({ type: "ping" as any });
+        setTimeout(() => sendSessionInfo(), 100);
       };
     }
 
@@ -228,16 +182,6 @@ export class WebSocketHandler {
           return;
         }
 
-        if (message.type === "git.status") {
-          await this.runGitStatus();
-          return;
-        }
-
-        if (message.type === "git.diff") {
-          await this.runGitDiff();
-          return;
-        }
-
         if (message.type === "task") {
           const taskContent = message.content;
 
@@ -250,7 +194,7 @@ export class WebSocketHandler {
             return;
           }
 
-          log(`📝 New task: ${taskContent}`);
+          log(`New task: ${taskContent}`);
 
           // Add user message
           this.globalSession.addMessage({
@@ -294,14 +238,13 @@ export class WebSocketHandler {
       }
     };
 
-    socket.onclose = () => {
-      log("Client disconnected");
+    socket.onclose = (event) => {
+      log(`Client ${clientId} disconnected (${event.code})`);
       this.connectedClients.delete(socket);
-      log(`Total connected clients: ${this.connectedClients.size}`);
     };
 
     socket.onerror = (err) => {
-      error("WebSocket error:", err);
+      error(`Client ${clientId} error:`, err);
       this.connectedClients.delete(socket);
     };
   }

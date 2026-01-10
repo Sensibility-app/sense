@@ -137,13 +137,13 @@ export async function transpileFile(filepath: string): Promise<{ code: string; f
     }
 
     // Cache miss - transpile TypeScript
-    log(`📦 Transpiling ${filepath}...`);
+    log(`Transpiling ${filepath}...`);
     const startTime = performance.now();
 
     const jsCode = await transpileTypeScript(absolutePath);
 
     const duration = (performance.now() - startTime).toFixed(0);
-    log(`✅ Transpilation complete (${duration}ms, ${jsCode.length} bytes)`);
+    log(`Transpilation complete (${duration}ms, ${jsCode.length} bytes)`);
 
     // Cache the result
     setCached(absolutePath, sourceHash, jsCode);
@@ -155,7 +155,7 @@ export async function transpileFile(filepath: string): Promise<{ code: string; f
   } catch (err) {
     // Transpilation or file read failed
     const errorMessage = err instanceof Error ? err.message : String(err);
-    logError(`❌ TypeScript transpilation error for ${filepath}:`, errorMessage);
+    logError(`TypeScript transpilation error for ${filepath}:`, errorMessage);
 
     // Convert to absolute path to check cache
     const absolutePath = toAbsolutePath(filepath);
@@ -163,7 +163,7 @@ export async function transpileFile(filepath: string): Promise<{ code: string; f
     // Try to return last cached version (any hash)
     const entry = cache.get(absolutePath);
     if (entry) {
-      logError("⚠️  Serving last known good version from cache");
+      logError("Warning: Serving last known good version from cache");
       return { code: entry.transpiledCode, fromCache: true };
     }
 
@@ -177,7 +177,7 @@ export async function transpileFile(filepath: string): Promise<{ code: string; f
  */
 export function invalidateCache(filepath: string): void {
   cache.delete(filepath);
-  log(`🗑️  Transpilation cache invalidated for ${filepath}`);
+  log(`Transpilation cache invalidated for ${filepath}`);
 }
 
 /**
@@ -185,5 +185,5 @@ export function invalidateCache(filepath: string): void {
  */
 export function clearCache(): void {
   cache.clear();
-  log("🗑️  All transpilation caches cleared");
+  log("All transpilation caches cleared");
 }

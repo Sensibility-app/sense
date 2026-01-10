@@ -1,6 +1,7 @@
 import { join } from "jsr:@std/path@^1.0.0";
 import { exists } from "jsr:@std/fs@^1.0.0";
 import { log, error } from "./logger.ts";
+import { formatToolAsMarkdown } from "./tools/_shared/tool-formatter.ts";
 
 const SENSE_DIR = join(Deno.cwd(), ".sense");
 const CURRENT_SESSION_PATH = join(SENSE_DIR, "current-session.json");
@@ -225,7 +226,7 @@ export class PersistentSession {
       const nextMsg = messages[i + 1];
       if (nextMsg.role !== "user" || !Array.isArray(nextMsg.content)) {
         // No user message after tool_use = truncate here
-        log(`⚠️  Found tool_use without following user message at index ${i}, truncating`);
+        log(`Warning: Found tool_use without following user message at index ${i}, truncating`);
         this.messages = messages.slice(0, i);
         await this.save();
         return this.messages;
@@ -239,7 +240,7 @@ export class PersistentSession {
       const missingResults = toolUseIds.filter(id => !toolResultIds.includes(id));
 
       if (missingResults.length > 0) {
-        log(`⚠️  Found ${missingResults.length} unpaired tool_use blocks at message ${i}`);
+        log(`Warning: Found ${missingResults.length} unpaired tool_use blocks at message ${i}`);
         log(`    Tool use IDs: ${toolUseIds.join(", ")}`);
         log(`    Tool result IDs: ${toolResultIds.join(", ")}`);
         log(`    Missing results for: ${missingResults.join(", ")}`);
@@ -335,7 +336,7 @@ export interface DisplayMessage {
 
 export function formatSessionHistory(messages: ConversationMessage[]): DisplayMessage[] {
   const displayMessages: DisplayMessage[] = [];
-  const pendingToolCalls = new Map<string, DisplayMessage>(); // tool_use_id -> display message
+  const pendingToolCalls = new Map<string, { toolName: string; toolInput: unknown }>(); // tool_use_id -> tool info
 
   for (const message of messages) {
     if (message.role === "user") {
@@ -352,12 +353,23 @@ export function formatSessionHistory(messages: ConversationMessage[]): DisplayMe
               const toolResult = item as { tool_use_id: string; content: unknown; is_error?: boolean };
               const pendingTool = pendingToolCalls.get(toolResult.tool_use_id);
               if (pendingTool) {
-                // Add result to the pending tool call and move it to display
-                pendingTool.toolResult = typeof toolResult.content === "string"
+                // Format as markdown and add as assistant message
+                const resultContent = typeof toolResult.content === "string"
                   ? toolResult.content
                   : JSON.stringify(toolResult.content);
-                pendingTool.toolError = toolResult.is_error || false;
-                displayMessages.push(pendingTool);
+
+                const markdown = formatToolAsMarkdown({
+                  toolName: pendingTool.toolName,
+                  toolId: toolResult.tool_use_id,
+                  toolInput: pendingTool.toolInput,
+                  toolResult: resultContent,
+                  isError: toolResult.is_error || false,
+                });
+
+                displayMessages.push({
+                  type: "assistant",
+                  content: markdown
+                });
                 pendingToolCalls.delete(toolResult.tool_use_id);
               }
             } else if ("text" in item) {
@@ -401,13 +413,10 @@ export function formatSessionHistory(messages: ConversationMessage[]): DisplayMe
               } else if (block.type === "tool_use" && "name" in block && "id" in block) {
                 // Tool use - store it pending result matching
                 const toolBlock = block as { id: string; name: string; input?: unknown };
-                const toolMessage: DisplayMessage = {
-                  type: "tool",
-                  content: `Using tool: ${toolBlock.name}`,
+                pendingToolCalls.set(toolBlock.id, {
                   toolName: toolBlock.name,
                   toolInput: toolBlock.input
-                };
-                pendingToolCalls.set(toolBlock.id, toolMessage);
+                });
               }
             }
           }
@@ -423,8 +432,18 @@ export function formatSessionHistory(messages: ConversationMessage[]): DisplayMe
   }
 
   // Add any remaining tool calls without results (shouldn't happen in normal flow)
-  for (const toolMessage of pendingToolCalls.values()) {
-    displayMessages.push(toolMessage);
+  for (const [toolId, toolInfo] of pendingToolCalls.entries()) {
+    const markdown = formatToolAsMarkdown({
+      toolName: toolInfo.toolName,
+      toolId: toolId,
+      toolInput: toolInfo.toolInput,
+      toolResult: "(No result - tool execution interrupted)",
+      isError: true,
+    });
+    displayMessages.push({
+      type: "assistant",
+      content: markdown
+    });
   }
 
   return displayMessages;

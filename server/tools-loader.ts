@@ -101,7 +101,7 @@ export async function loadTools(): Promise<LoadedTool[]> {
 
         // In development, show syntax errors prominently
         if (Deno.env.get("DENO_TASK_NAME") === "dev" && err instanceof Error) {
-          console.error(`\n❌ Syntax error in ${entry.name}:\n`, err.stack);
+          console.error(`\nSyntax error in ${entry.name}:\n`, err.stack);
         }
       }
     }

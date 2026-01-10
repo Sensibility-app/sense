@@ -3,7 +3,7 @@ import { getToolDefinitions, executeTool } from "./tools-loader.ts";
 
 // Load tools
 const TOOLS = await getToolDefinitions();
-import { log as logDebug } from "./logger.ts";
+import { log as logDebug, error } from "./logger.ts";
 import type { PersistentSession } from "./persistent-session.ts";
 import { CLAUDE_MODEL } from "./constants.ts";
 
@@ -48,6 +48,11 @@ ENVIRONMENT:
 - Paths relative to root
 - Structure: /server (Deno TS - YOUR backend), /client (browser - YOUR frontend), /.sense (YOUR logs)
 
+HISTORICAL FILES (DO NOT DELETE):
+- hello.md - Historical marker from project contributor (Andrei)
+- hello.txt - Historical test artifact
+These files have historical significance and must be preserved even if they appear unused.
+
 TOOL USAGE:
 - Read files before editing to understand current state
 - Test changes carefully when modifying your own code
@@ -55,7 +60,7 @@ TOOL USAGE:
 - Don't repeat identical tool calls`;
 
 export interface MessageChunk {
-  type: "text" | "text_delta" | "tool_use" | "tool_result" | "thinking" | "complete" | "token_usage";
+  type: "text" | "text_delta" | "tool_use" | "tool_result" | "tool_start" | "tool_complete" | "thinking" | "complete" | "token_usage";
   content: string;
   toolName?: string;
   toolInput?: unknown;
@@ -130,26 +135,46 @@ export async function* continueConversation(
     );
 
     // Call Claude with streaming enabled and prompt caching
-    const stream = await getClient().messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 4096,
-      // System prompt as array with cache_control for caching
-      system: [
-        {
-          type: "text",
-          text: SYSTEM_PROMPT,
-          cache_control: { type: "ephemeral" }
-        } as any
-      ],
-      messages: messages as Anthropic.MessageParam[],
-      tools: toolsWithCache as any,
-      stream: true,
-    });
+    let stream;
+    try {
+      stream = await getClient().messages.create({
+        model: CLAUDE_MODEL,
+        max_tokens: 4096,
+        // System prompt as array with cache_control for caching
+        system: [
+          {
+            type: "text",
+            text: SYSTEM_PROMPT,
+            cache_control: { type: "ephemeral" }
+          } as any
+        ],
+        messages: messages as Anthropic.MessageParam[],
+        tools: toolsWithCache as any,
+        stream: true,
+      });
+    } catch (err: any) {
+      // Log detailed error info for debugging 400 errors
+      error("[ERROR] Claude API error:", err.message);
+      if (err.status === 400) {
+        error("[DEBUG] Message history length:", messages.length);
+        error("[DEBUG] Last 3 messages:", JSON.stringify(messages.slice(-3), null, 2));
+
+        // Try to validate and fix history if we have a session
+        if (session) {
+          error("[RECOVERY] Attempting to validate and clean history...");
+          await session.validateAndCleanHistory();
+        }
+      }
+      throw err;
+    }
 
     // Track assistant response content for conversation history
     const assistantContent: Array<Anthropic.TextBlock | Anthropic.ToolUseBlock> = [];
     let currentText = "";
     let currentToolUse: Anthropic.ToolUseBlock | null = null;
+
+    // Accumulate tool results for batch saving (fixes 400 error)
+    const toolResults = new Map<string, { content: string; isError?: boolean }>();
 
     // Process streaming response
     let currentMessageUsage: {
@@ -222,16 +247,6 @@ export async function* continueConversation(
           // Add completed tool use block
           assistantContent.push(currentToolUse);
 
-          // Emit tool use
-          const toolChunk: MessageChunk = {
-            type: "tool_use",
-            content: `Using tool: ${currentToolUse.name}`,
-            toolName: currentToolUse.name,
-            toolInput: currentToolUse.input,
-            toolId: currentToolUse.id,
-          };
-          yield toolChunk;
-
           // Detect repeated tool calls (potential loop)
           const toolKey = `${currentToolUse.name}:${JSON.stringify(currentToolUse.input)}`;
           const callCount = (recentToolCalls.get(toolKey) || 0) + 1;
@@ -239,6 +254,45 @@ export async function* continueConversation(
 
           // Check if we should stop before executing tool
           if (shouldStop && shouldStop()) {
+            // Remove the current tool_use from assistantContent since we won't execute it
+            assistantContent.pop();
+
+            // Save any completed tools before stopping
+            if (toolResults.size > 0) {
+              const assistantMessage = {
+                role: "assistant" as const,
+                content: assistantContent,
+              };
+              messages.push(assistantMessage);
+
+              const allToolResultBlocks: Anthropic.ToolResultBlockParam[] = [];
+              for (const block of assistantContent) {
+                if (block.type === "tool_use") {
+                  const result = toolResults.get(block.id);
+                  if (result) {
+                    allToolResultBlocks.push({
+                      type: "tool_result",
+                      tool_use_id: block.id,
+                      content: result.content,
+                      is_error: result.isError,
+                    });
+                  }
+                }
+              }
+
+              if (allToolResultBlocks.length > 0) {
+                const toolResultMessage = {
+                  role: "user" as const,
+                  content: allToolResultBlocks,
+                };
+                messages.push(toolResultMessage);
+
+                if (session) {
+                  session.batchAddMessages([assistantMessage, toolResultMessage]);
+                }
+              }
+            }
+
             const stopChunk: MessageChunk = {
               type: "complete",
               content: "Task stopped by user",
@@ -249,43 +303,36 @@ export async function* continueConversation(
 
           // Execute the tool
           logDebug(`[TOOL] ${currentToolUse.name}(${JSON.stringify(currentToolUse.input)})`);
+
+          // Emit tool_start chunk before execution
+          const toolStartChunk: MessageChunk = {
+            type: "tool_start",
+            content: "",
+            toolName: currentToolUse.name,
+            toolId: currentToolUse.id,
+            toolInput: currentToolUse.input,
+          };
+          if (onChunk) onChunk(toolStartChunk);
+          yield toolStartChunk;
+
           const result = await executeTool(currentToolUse.name, currentToolUse.input as Record<string, unknown>);
 
-          // Emit tool result
-          const resultChunk: MessageChunk = {
-            type: "tool_result",
+          // Yield combined tool_complete chunk (includes both input and output)
+          const toolCompleteChunk: MessageChunk = {
+            type: "tool_complete",
             content: result.content,
+            toolName: currentToolUse.name,
+            toolId: currentToolUse.id,
+            toolInput: currentToolUse.input,
             isError: result.isError,
           };
-          yield resultChunk;
+          yield toolCompleteChunk;
 
-          // Add tool result to messages for next iteration
-          const assistantMessage = {
-            role: "assistant" as const,
-            content: assistantContent,
-          };
-          messages.push(assistantMessage);
-
-          const toolResultMessage = {
-            role: "user" as const,
-            content: [
-              {
-                type: "tool_result",
-                tool_use_id: currentToolUse.id,
-                content: result.content,
-                is_error: result.isError,
-              },
-            ] as Anthropic.ToolResultBlockParam[],
-          };
-          messages.push(toolResultMessage);
-
-          // CRITICAL: Save to persistent session immediately
-          // This ensures conversation history survives server reloads
-          if (session) {
-            session.addMessage(assistantMessage);
-            session.addMessage(toolResultMessage);
-            // Note: addMessage calls save() internally
-          }
+          // Accumulate tool result for batch saving (don't save immediately)
+          toolResults.set(currentToolUse.id, {
+            content: result.content,
+            isError: result.isError,
+          });
 
           currentToolUse = null;
 
@@ -316,6 +363,46 @@ export async function* continueConversation(
       } else if (chunk.type === "message_stop") {
         // Message fully completed
         break;
+      }
+    }
+
+    // BATCH SAVE: Save assistant message + all tool results in one user message
+    // This fixes the 400 error where tool_use blocks didn't have matching tool_result blocks
+    if (toolResults.size > 0) {
+      // Create assistant message with all tool_use blocks
+      const assistantMessage = {
+        role: "assistant" as const,
+        content: assistantContent,
+      };
+      messages.push(assistantMessage);
+
+      // Create single user message with ALL tool results
+      const allToolResultBlocks: Anthropic.ToolResultBlockParam[] = [];
+      for (const block of assistantContent) {
+        if (block.type === "tool_use") {
+          const result = toolResults.get(block.id);
+          if (result) {
+            allToolResultBlocks.push({
+              type: "tool_result",
+              tool_use_id: block.id,
+              content: result.content,
+              is_error: result.isError,
+            });
+          }
+        }
+      }
+
+      if (allToolResultBlocks.length > 0) {
+        const toolResultMessage = {
+          role: "user" as const,
+          content: allToolResultBlocks,
+        };
+        messages.push(toolResultMessage);
+
+        // Save both messages to persistent session atomically
+        if (session) {
+          session.batchAddMessages([assistantMessage, toolResultMessage]);
+        }
       }
     }
 
