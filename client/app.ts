@@ -91,36 +91,61 @@ function makeCollapsible(
 }
 
 /**
- * Add user message to output
+ * Create message element (base renderer for all message types)
  */
-function addUserMessage(content: string) {
+function createMessage(
+  type: "user" | "assistant" | "system",
+  content: string,
+  options: {
+    level?: "info" | "error" | "success";
+    parseMarkdown?: boolean;
+  } = {}
+): HTMLElement {
   const message = document.createElement("div");
-  message.className = "message user";
+  message.className = `message ${type}`;
+
+  if (type === "system" && options.level === "error") {
+    message.classList.add("error");
+  }
 
   const messageContent = document.createElement("div");
   messageContent.className = "message-content";
-  messageContent.textContent = content;
+
+  if (options.parseMarkdown) {
+    parseMarkdown(content, messageContent);
+  } else {
+    messageContent.textContent = content;
+  }
 
   message.appendChild(messageContent);
+  return message;
+}
+
+/**
+ * Add message to output (unified function)
+ */
+function addMessage(
+  type: "user" | "assistant" | "system",
+  content: string,
+  options = {}
+): void {
+  const message = createMessage(type, content, options);
   output.appendChild(message);
   scrollToBottom();
+}
+
+/**
+ * Add user message to output
+ */
+function addUserMessage(content: string) {
+  addMessage("user", content);
 }
 
 /**
  * Add assistant message to output (for history)
  */
 function addAssistantMessage(content: string) {
-  const message = document.createElement("div");
-  message.className = "message assistant";
-
-  const messageContent = document.createElement("div");
-  messageContent.className = "message-content";
-
-  parseMarkdown(content, messageContent);
-
-  message.appendChild(messageContent);
-  output.appendChild(message);
-  scrollToBottom();
+  addMessage("assistant", content, { parseMarkdown: true });
 }
 
 /**
@@ -182,16 +207,7 @@ function finishAssistantMessage() {
  * Add system message to output
  */
 function addSystemMessage(content: string, level: string = "info") {
-  const message = document.createElement("div");
-  message.className = `message system ${level === "error" ? "error" : ""}`;
-
-  const messageContent = document.createElement("div");
-  messageContent.className = "message-content";
-  messageContent.textContent = content;
-
-  message.appendChild(messageContent);
-  output.appendChild(message);
-  scrollToBottom();
+  addMessage("system", content, { level });
 }
 
 /**
