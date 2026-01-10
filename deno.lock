@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@cfa/gitignore-parser@*": "0.1.4",
     "jsr:@deno/cache-dir@0.13.2": "0.13.2",
     "jsr:@deno/emit@*": "0.46.0",
     "jsr:@deno/graph@~0.73.1": "0.73.1",
@@ -22,9 +23,13 @@
     "jsr:@std/path@^1.1.4": "1.1.4",
     "npm:@anthropic-ai/sdk@0.27": "0.27.3",
     "npm:@anthropic-ai/sdk@0.32": "0.32.1",
+    "npm:ignore@^6.0.2": "6.0.2",
     "npm:typescript@5.7.3": "5.7.3"
   },
   "jsr": {
+    "@cfa/gitignore-parser@0.1.4": {
+      "integrity": "60d3563bbd7b8797f50c28585d7d74d231fbb56a1d9df7b0673c27cbdf60a23a"
+    },
     "@deno/cache-dir@0.13.2": {
       "integrity": "c22419dfe27ab85f345bee487aaaadba498b005cce3644e9d2528db035c5454d",
       "dependencies": [
@@ -265,6 +270,9 @@
       "dependencies": [
         "ms"
       ]
+    },
+    "ignore@6.0.2": {
+      "integrity": "sha512-InwqeHHN2XpumIkMvpl/DCJVrAHgCsG5+cn1XlnLWGwtZBm8QJfSusItfrwx81CTp5agNZqpKU2J/ccC5nGT4A=="
     },
     "math-intrinsics@1.1.0": {
       "integrity": "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g=="
