@@ -5,6 +5,7 @@ import { log, error } from "./logger.ts";
 import { setTranspileCallback, transpileFile } from "./transpile.ts";
 import { type ClientMessage, type ServerMessage, formatTokenUsage } from "./server-types.ts";
 import { serveStaticFile } from "./file-server.ts";
+import { ReloadManager } from "./reload-manager.ts";
 // === Agent execution context ===
 type BroadcastFn = (message: any) => void;
 
@@ -14,14 +15,21 @@ type BroadcastFn = (message: any) => void;
 class AgentContext {
   private stopRequested = false;
   private runningTask: Promise<void> | null = null;
-  private pendingReload = false;
   private broadcastFn: BroadcastFn | null = null;
+  private reloadManager: ReloadManager | null = null;
 
   /**
    * Set broadcast function for sending messages to clients
    */
   setBroadcast(broadcast: BroadcastFn): void {
     this.broadcastFn = broadcast;
+  }
+
+  /**
+   * Set reload manager for handling page reloads
+   */
+  setReloadManager(manager: ReloadManager): void {
+    this.reloadManager = manager;
   }
 
   /**
@@ -47,29 +55,6 @@ class AgentContext {
   }
 
   /**
-   * Request a page reload (will be deferred if task is running)
-   */
-  requestReload(): void {
-    if (this.isRunning()) {
-      log("⏸️  Deferring page reload until task completes");
-      this.pendingReload = true;
-    } else {
-      this.triggerReload();
-    }
-  }
-
-  /**
-   * Trigger immediate page reload
-   */
-  private triggerReload(): void {
-    if (this.broadcastFn) {
-      log("🔄 Triggering page reload");
-      this.broadcastFn({ type: "reload_page", reason: "Server code changed" });
-    }
-    this.pendingReload = false;
-  }
-
-  /**
    * Execute an agent task with automatic lifecycle management
    */
   async execute(
@@ -86,6 +71,11 @@ class AgentContext {
         this.broadcastFn({ type: "processing_status", isProcessing: true });
       }
 
+      // Notify reload manager that task is starting
+      if (this.reloadManager) {
+        this.reloadManager.setTaskRunning(true);
+      }
+
       this.runningTask = taskFn(() => this.shouldStop());
       await this.runningTask;
     } finally {
@@ -96,10 +86,9 @@ class AgentContext {
         this.broadcastFn({ type: "processing_status", isProcessing: false });
       }
 
-      // Trigger pending reload if needed (after task completes)
-      if (this.pendingReload) {
-        log("🔄 Triggering deferred reload");
-        setTimeout(() => this.triggerReload(), 100);
+      // Notify reload manager that task is complete
+      if (this.reloadManager) {
+        this.reloadManager.setTaskRunning(false);
       }
     }
   }
@@ -118,6 +107,9 @@ const connectedClients = new Set<WebSocket>();
 
 // Agent execution context
 const agent = new AgentContext();
+
+// Reload manager for coordinating page reloads
+const reloadManager = new ReloadManager();
 
 // Helper function to execute git commands
 async function executeGitCommand(
@@ -229,25 +221,7 @@ setTranspileCallback((filepath: string, fromCache: boolean) => {
   if (!fromCache) {
     const filename = filepath.split('/').pop();
     log(`🔄 Fresh transpilation complete: ${filename}`);
-
-    // Don't reload if a task is currently running (would interrupt it)
-    if (agent.isRunning()) {
-      log(`⏸️  Deferring reload - task is running`);
-      broadcast({
-        type: "system",
-        content: `${filename} compiled - page will reload after task completes`,
-        level: "info"
-      });
-      agent.requestReload();
-    } else {
-      // Small delay to ensure response is sent before reload
-      setTimeout(() => {
-        broadcast({
-          type: "reload_page",
-          reason: `TypeScript compiled: ${filename}`
-        });
-      }, 50);
-    }
+    reloadManager.requestReload(`TypeScript compiled: ${filename}`);
   }
 });
 
@@ -283,31 +257,12 @@ function setupFileWatcher() {
               });
             }
           }
-          // Non-TypeScript files: reload only if no task is running
+          // Non-TypeScript files: request reload (reloadManager handles deferral)
           else if (changedPath.endsWith('.css') ||
                    changedPath.endsWith('.html') ||
                    changedPath.endsWith('.js')) {
             log(`📝 Client file changed: ${changedFile}`);
-
-            // Don't reload if a task is currently running (would interrupt it)
-            if (agent.isRunning()) {
-              log(`⏸️  Deferring reload - task is running`);
-              broadcast({
-                type: "system",
-                content: `${changedFile} updated - page will reload after task completes`,
-                level: "info"
-              });
-              agent.requestReload();
-            } else {
-              log(`Broadcasting reload`);
-              // Small delay to ensure file is fully written to disk
-              setTimeout(() => {
-                broadcast({
-                  type: "reload_page",
-                  reason: `Client file updated: ${changedFile}`
-                });
-              }, 100);
-            }
+            reloadManager.requestReload(`Client file updated: ${changedFile}`);
           }
         }
       }
@@ -346,6 +301,10 @@ function broadcast(msg: ServerMessage) {
 
 // Setup agent broadcast function
 agent.setBroadcast(broadcast);
+
+// Setup reload manager and wire to agent
+reloadManager.setBroadcast(broadcast);
+agent.setReloadManager(reloadManager);
 
 // Handle agent events and broadcast to clients
 function handleAgentEvent(chunk: any): void {
@@ -608,7 +567,8 @@ Deno.serve({ port: PORT }, async (req) => {
   // Serve static files (handles transpilation automatically)
   return serveStaticFile(url.pathname, (filepath, fromCache) => {
     if (!fromCache) {
-      agent.requestReload();
+      const filename = filepath.split('/').pop() || filepath;
+      reloadManager.requestReload(`File transpiled: ${filename}`);
     }
   });
 });
