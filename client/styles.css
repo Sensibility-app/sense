@@ -1,5 +1,6 @@
 :root {
   --bg-primary: #ffffff;
+  --bg-primary-rgb: 255, 255, 255;
   --bg-secondary: #f5f5f7;
   --bg-tertiary: #e8e8ed;
   --text-primary: #1d1d1f;
@@ -19,6 +20,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg-primary: #000000;
+    --bg-primary-rgb: 0, 0, 0;
     --bg-secondary: #1c1c1e;
     --bg-tertiary: #2c2c2e;
     --text-primary: #f5f5f7;
@@ -52,23 +54,45 @@ body {
   line-height: 1.5;
   background: var(--bg-primary);
   color: var(--text-primary);
+
+  /* iOS viewport support with fallback */
   height: 100vh;
-  display: flex;
-  flex-direction: column;
+  height: 100dvh;
+
+  /* Prevent bounce scrolling on iOS */
+  position: fixed;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+
   padding-left: env(safe-area-inset-left, 0);
   padding-right: env(safe-area-inset-right, 0);
 }
 
 header {
-  background: var(--bg-primary);
-  padding: clamp(12px, 3vw, 16px) clamp(16px, 5vw, 24px);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+
+  /* Semi-transparent background for iOS style */
+  background: rgba(var(--bg-primary-rgb), 0.95);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+
+  /* iOS safe area support */
+  padding-top: max(clamp(12px, 3vw, 16px), env(safe-area-inset-top, 0));
+  padding-left: max(clamp(16px, 5vw, 24px), env(safe-area-inset-left, 0));
+  padding-right: max(clamp(16px, 5vw, 24px), env(safe-area-inset-right, 0));
+  padding-bottom: clamp(12px, 3vw, 16px);
+
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  backdrop-filter: blur(20px);
   flex-wrap: wrap;
-  gap: clamp(8px, 2vw, 16px);
+  gap: clamp(12px, 2vw, 16px);
 }
 
 h1 {
@@ -109,15 +133,28 @@ h1 {
 }
 
 main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+
+  /* Padding for fixed header/footer - will be updated dynamically by JS */
+  padding-top: 60px;
+  padding-bottom: 80px;
+
   overflow: hidden;
 }
 
 .output {
-  flex: 1;
+  height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
+
+  /* iOS smooth scrolling */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+
   padding: clamp(12px, 4vw, 24px);
   background: var(--bg-primary);
 }
@@ -158,6 +195,11 @@ main {
 }
 
 /* Markdown styling */
+.message-content {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
 .message-content p {
   margin: 0 0 12px 0;
 }
@@ -308,6 +350,54 @@ main {
   font-family: var(--font-mono);
 }
 
+/* Tool rendering as HTML details/summary */
+.message-content details {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+
+.message-content details summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  list-style: none; /* Remove default arrow */
+}
+
+.message-content details summary::-webkit-details-marker {
+  display: none; /* Remove default arrow in WebKit */
+}
+
+.message-content details summary:hover {
+  background: var(--bg-secondary);
+}
+
+.message-content details[open] summary {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.message-content details > div,
+.message-content details > p {
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.message-content details.tool-error {
+  border-color: var(--error-color);
+}
+
+.message-content details.tool-error summary {
+  color: var(--error-color);
+}
+
+/* Old tool styles - kept for backwards compatibility during transition */
 .tool-use {
   margin-bottom: 12px;
   overflow: hidden;
@@ -324,6 +414,10 @@ main {
   color: var(--text-tertiary);
 }
 
+.tool-header > span:first-child {
+  flex-shrink: 0;
+}
+
 .tool-header:hover {
   color: var(--text-secondary);
 }
@@ -331,16 +425,10 @@ main {
 .tool-name {
   font-family: var(--font-mono);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  flex-shrink: 1;
   min-width: 0;
-}
-
-.tool-use:not(.collapsed) .tool-name {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: unset;
 }
 
 .tool-result {
@@ -348,8 +436,6 @@ main {
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-tertiary);
-  white-space: pre-wrap;
-  font-family: var(--font-mono);
   max-height: 300px;
   overflow-y: auto;
 }
@@ -370,9 +456,24 @@ main {
 }
 
 .input-area {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+
+  /* Semi-transparent background for iOS style */
+  background: rgba(var(--bg-primary-rgb), 0.95);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+
+  /* iOS safe area support for home indicator */
+  padding-left: max(clamp(16px, 5vw, 24px), env(safe-area-inset-left, 0));
+  padding-right: max(clamp(16px, 5vw, 24px), env(safe-area-inset-right, 0));
+  padding-top: 12px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0));
+
   border-top: 1px solid var(--border-color);
-  background: var(--bg-primary);
-  padding: 12px clamp(16px, 5vw, 24px);
 }
 
 button {
@@ -380,10 +481,8 @@ button {
   color: var(--text-tertiary);
   border: none;
   padding: 0;
-  width: clamp(32px, 8vw, 44px);
-  height: clamp(32px, 8vw, 44px);
-  min-width: 32px;
-  min-height: 32px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   cursor: pointer;
   font-size: 16px;
@@ -423,11 +522,11 @@ button:disabled {
 .task-input-wrapper {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 0 10px;
+  padding: 0 12px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -441,12 +540,12 @@ textarea {
   background: transparent;
   border: none;
   color: var(--text-primary);
-  padding: 0;
+  padding: 10px 0;
   font-family: inherit;
   font-size: clamp(14px, 3vw, 16px);
   line-height: 20px;
   resize: none;
-  height: 20px;
+  height: 40px;
   max-height: 200px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -462,6 +561,26 @@ textarea::placeholder {
   color: var(--text-tertiary);
 }
 
+/* Processing state - textarea stays enabled, visual feedback only */
+.task-input-wrapper {
+  position: relative;
+}
+
+.task-input-wrapper.processing {
+  border-color: var(--accent-color);
+  background: var(--bg-secondary);
+}
+
+.task-input-wrapper.processing::after {
+  content: "Processing - type your next message";
+  position: absolute;
+  top: -20px;
+  left: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
 .working {
   display: inline-block;
   width: 12px;
@@ -475,4 +594,49 @@ textarea::placeholder {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Tool execution indicator */
+.tool-executing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  animation: fadeIn 0.2s ease;
+}
+
+.tool-icon {
+  font-size: 16px;
+  animation: rotate 2s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tool-label {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  flex: 1;
+}
+
+.tool-executing .spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }

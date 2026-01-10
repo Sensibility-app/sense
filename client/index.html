@@ -18,33 +18,27 @@
     <h1>Sense</h1>
     <div class="header-info">
       <div id="tokenInfo" class="status" style="display: none;"></div>
-      <div class="status" id="status">Disconnected</div>
+      <div class="status reconnecting" id="status">Connecting...</div>
     </div>
   </header>
 
   <main>
     <div class="output" id="output">
     </div>
-
-    <div class="input-area">
-      <div class="task-input-wrapper">
-        <textarea id="taskInput" placeholder="Ask me anything..." autofocus></textarea>
-        <button id="submitBtn">↑</button>
-        <button id="stopBtn" style="display: none;">■</button>
-      </div>
-    </div>
   </main>
 
-  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
-  <script>
-    // Configure marked for security and better rendering
-    marked.setOptions({
-      breaks: true,
-      gfm: true,
-      headerIds: false,
-      mangle: false
-    });
-  </script>
-  <script type="module" src="/client/app.ts"></script>
+  <div class="input-area">
+    <div class="task-input-wrapper">
+      <textarea id="taskInput" placeholder="Ask me anything..." autofocus></textarea>
+      <button id="submitBtn">↑</button>
+      <button id="stopBtn" style="display: none;">■</button>
+    </div>
+  </div>
+
+  <!-- Load marked.js with preconnect for faster CDN access -->
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js" defer></script>
+
+  <script type="module" src="/client/app.js"></script>
 </body>
 </html>
