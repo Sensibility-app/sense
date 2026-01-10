@@ -12,8 +12,9 @@ A browser-based IDE that integrates Claude's native tool use capabilities for se
 
 2. **Run the server**:
    ```bash
-   deno task dev
+   deno task start
    ```
+   > 💡 Validation + hot-reload enabled - broken code won't crash the server
 
 3. **Open your browser**:
    - Navigate to http://localhost:8080
@@ -74,12 +75,17 @@ Search for TODOs in the codebase and create a todo.md file
 ## Development
 
 ```bash
-# Start with auto-reload
-deno task dev
+# Start server (validation + hot-reload)
+deno task start
+
+# Fast mode (no validation, for debugging crashes)
+deno task start:fast
 
 # Run tests (when available)
 deno task test
 ```
+
+**Validation is always enabled by default** - Sense is self-modifying, so syntax errors are caught before restart to keep the working server alive.
 
 ### TypeScript Client Architecture
 
