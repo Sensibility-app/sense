@@ -9,26 +9,38 @@
 // STATE MANAGEMENT
 // =============================================================================
 
-export interface AppState {
+interface ConnectionState {
   ws: WebSocket | null;
-  isProcessing: boolean;
+  status: "connected" | "disconnected" | "reconnecting";
+  reconnectAttempts: number;
+  heartbeatInterval: number | null;
+  isFirstConnection: boolean;
+}
+
+interface RenderState {
   currentAssistantMessage: HTMLDivElement | null;
   currentAssistantText: string;
-  isFirstConnection: boolean;
-  connectionState: "connected" | "disconnected" | "reconnecting";
-  heartbeatInterval: number | null;
-  reconnectAttempts: number;
+}
+
+export interface AppState {
+  connection: ConnectionState;
+  render: RenderState;
+  isProcessing: boolean;
 }
 
 export const state: AppState = {
-  ws: null,
+  connection: {
+    ws: null,
+    status: "disconnected",
+    reconnectAttempts: 0,
+    heartbeatInterval: null,
+    isFirstConnection: true,
+  },
+  render: {
+    currentAssistantMessage: null,
+    currentAssistantText: "",
+  },
   isProcessing: false,
-  currentAssistantMessage: null,
-  currentAssistantText: "",
-  isFirstConnection: true,
-  connectionState: "disconnected",
-  heartbeatInterval: null,
-  reconnectAttempts: 0,
 };
 
 export const CONFIG = {
@@ -155,16 +167,16 @@ function startAssistantMessage() {
   // Finish any existing message first
   finishAssistantMessage();
 
-  state.currentAssistantMessage = document.createElement("div");
-  state.currentAssistantMessage.className = "message assistant";
-  state.currentAssistantText = "";
+  state.render.currentAssistantMessage = document.createElement("div");
+  state.render.currentAssistantMessage.className = "message assistant";
+  state.render.currentAssistantText = "";
 
   const messageContent = document.createElement("div");
   messageContent.className = "message-content streaming-cursor";
   messageContent.textContent = "";
 
-  state.currentAssistantMessage.appendChild(messageContent);
-  output.appendChild(state.currentAssistantMessage);
+  state.render.currentAssistantMessage.appendChild(messageContent);
+  output.appendChild(state.render.currentAssistantMessage);
   scrollToBottom();
 }
 
@@ -172,15 +184,15 @@ function startAssistantMessage() {
  * Append text to streaming assistant message
  */
 function appendToAssistantMessage(text: string) {
-  if (!state.currentAssistantMessage) {
+  if (!state.render.currentAssistantMessage) {
     startAssistantMessage();
   }
 
-  state.currentAssistantText += text;
-  const content = state.currentAssistantMessage!.querySelector(".message-content") as HTMLElement;
+  state.render.currentAssistantText += text;
+  const content = state.render.currentAssistantMessage!.querySelector(".message-content") as HTMLElement;
 
   // Try to render markdown in real-time (falls back to text if incomplete)
-  parseMarkdown(state.currentAssistantText, content);
+  parseMarkdown(state.render.currentAssistantText, content);
 
   scrollToBottom();
 }
@@ -189,17 +201,17 @@ function appendToAssistantMessage(text: string) {
  * Finish streaming assistant message
  */
 function finishAssistantMessage() {
-  if (state.currentAssistantMessage) {
-    const content = state.currentAssistantMessage.querySelector(".message-content") as HTMLElement;
+  if (state.render.currentAssistantMessage) {
+    const content = state.render.currentAssistantMessage.querySelector(".message-content") as HTMLElement;
     content.classList.remove("streaming-cursor");
 
     // Final markdown parse
-    if (state.currentAssistantText.trim()) {
-      parseMarkdown(state.currentAssistantText, content);
+    if (state.render.currentAssistantText.trim()) {
+      parseMarkdown(state.render.currentAssistantText, content);
     }
 
-    state.currentAssistantMessage = null;
-    state.currentAssistantText = "";
+    state.render.currentAssistantMessage = null;
+    state.render.currentAssistantText = "";
   }
 }
 
@@ -354,7 +366,7 @@ function setProcessing(processing: boolean) {
   state.isProcessing = processing;
 
   // Don't allow processing if not connected
-  if (processing && state.connectionState !== "connected") {
+  if (processing && state.connection.status !== "connected") {
     state.isProcessing = false;
     processing = false;
   }
@@ -416,16 +428,16 @@ let pendingHeartbeatTimeout: number | null = null;
  */
 function connect() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  state.ws = new WebSocket(`${protocol}//${window.location.host}`);
+  state.connection.ws = new WebSocket(`${protocol}//${window.location.host}`);
 
-  state.ws.onopen = () => {
-    state.connectionState = "connected";
-    state.reconnectAttempts = 0;
+  state.connection.ws.onopen = () => {
+    state.connection.status = "connected";
+    state.connection.reconnectAttempts = 0;
     updateConnectionStatus("connected");
     startHeartbeat();
   };
 
-  state.ws.onmessage = (event) => {
+  state.connection.ws.onmessage = (event) => {
     try {
       const message = JSON.parse(event.data);
 
@@ -446,22 +458,22 @@ function connect() {
     }
   };
 
-  state.ws.onclose = (event) => {
+  state.connection.ws.onclose = (event) => {
     console.log("WebSocket closed", event.code, event.reason);
-    state.connectionState = "disconnected";
+    state.connection.status = "disconnected";
     updateConnectionStatus("disconnected");
     stopHeartbeat();
     setProcessing(false);
 
     // Exponential backoff for reconnection
     const delay = Math.min(
-      CONFIG.RECONNECT_BASE_DELAY * Math.pow(CONFIG.RECONNECT_EXPONENTIAL_BASE, state.reconnectAttempts),
+      CONFIG.RECONNECT_BASE_DELAY * Math.pow(CONFIG.RECONNECT_EXPONENTIAL_BASE, state.connection.reconnectAttempts),
       CONFIG.RECONNECT_MAX_DELAY
     );
-    state.reconnectAttempts++;
+    state.connection.reconnectAttempts++;
 
-    if (state.reconnectAttempts <= CONFIG.MAX_RECONNECT_ATTEMPTS) {
-      console.log(`Reconnecting in ${delay}ms (attempt ${state.reconnectAttempts}/${CONFIG.MAX_RECONNECT_ATTEMPTS})`);
+    if (state.connection.reconnectAttempts <= CONFIG.MAX_RECONNECT_ATTEMPTS) {
+      console.log(`Reconnecting in ${delay}ms (attempt ${state.connection.reconnectAttempts}/${CONFIG.MAX_RECONNECT_ATTEMPTS})`);
       setTimeout(connect, delay);
     } else {
       console.log("Max reconnection attempts reached");
@@ -469,9 +481,9 @@ function connect() {
     }
   };
 
-  state.ws.onerror = (error) => {
+  state.connection.ws.onerror = (error) => {
     console.error("WebSocket error:", error);
-    state.connectionState = "disconnected";
+    state.connection.status = "disconnected";
     updateConnectionStatus("error");
   };
 }
@@ -481,7 +493,7 @@ function connect() {
  */
 const STATUS_CONFIG: Record<string, { text: string | (() => string); add: string; remove: string[] }> = {
   connected: { text: "Connected", add: "connected", remove: ["error", "reconnecting"] },
-  disconnected: { text: () => state.reconnectAttempts > 0 ? "Reconnecting..." : "Disconnected", add: "reconnecting", remove: ["connected"] },
+  disconnected: { text: () => state.connection.reconnectAttempts > 0 ? "Reconnecting..." : "Disconnected", add: "reconnecting", remove: ["connected"] },
   error: { text: "Connection Error", add: "error", remove: ["connected", "reconnecting"] },
   failed: { text: "Connection Failed", add: "error", remove: ["connected", "reconnecting"] },
 };
@@ -505,11 +517,11 @@ function updateConnectionStatus(status: string) {
  */
 function startHeartbeat() {
   stopHeartbeat(); // Clear any existing interval
-  state.heartbeatInterval = setInterval(() => {
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+  state.connection.heartbeatInterval = setInterval(() => {
+    if (state.connection.ws && state.connection.ws.readyState === WebSocket.OPEN) {
       console.log("Sending ping to server");
       try {
-        state.ws.send(JSON.stringify({ type: "ping" }));
+        state.connection.ws.send(JSON.stringify({ type: "ping" }));
 
         // Set a timeout to detect if server doesn't respond
         // If pong is received, this timeout will be cleared in onmessage handler
@@ -517,15 +529,15 @@ function startHeartbeat() {
           console.log("Heartbeat timeout - no pong received, closing connection");
           pendingHeartbeatTimeout = null;
           // No pong received - connection is dead, force reconnection
-          if (state.ws) {
-            state.ws.close();
+          if (state.connection.ws) {
+            state.connection.ws.close();
           }
         }, CONFIG.HEARTBEAT_TIMEOUT);
       } catch (error) {
         console.error("Error sending ping:", error);
-        state.connectionState = "disconnected";
+        state.connection.status = "disconnected";
         updateConnectionStatus("disconnected");
-        state.ws!.close();
+        state.connection.ws!.close();
       }
     }
   }, CONFIG.HEARTBEAT_INTERVAL);
@@ -535,9 +547,9 @@ function startHeartbeat() {
  * Stop heartbeat
  */
 function stopHeartbeat() {
-  if (state.heartbeatInterval) {
-    clearInterval(state.heartbeatInterval);
-    state.heartbeatInterval = null;
+  if (state.connection.heartbeatInterval) {
+    clearInterval(state.connection.heartbeatInterval);
+    state.connection.heartbeatInterval = null;
   }
   // Also clear any pending timeout
   if (pendingHeartbeatTimeout !== null) {
@@ -550,9 +562,9 @@ function stopHeartbeat() {
  * Check if WebSocket is connected
  */
 function isConnected(): boolean {
-  return state.ws !== null &&
-         state.ws.readyState === WebSocket.OPEN &&
-         state.connectionState === "connected";
+  return state.connection.ws !== null &&
+         state.connection.ws.readyState === WebSocket.OPEN &&
+         state.connection.status === "connected";
 }
 
 /**
@@ -561,13 +573,13 @@ function isConnected(): boolean {
 function sendWsMessage(type: string, content: string = ""): boolean {
   if (!isConnected()) {
     console.log("Cannot send message - connection not ready", {
-      wsExists: !!state.ws,
-      readyState: state.ws?.readyState,
-      connectionState: state.connectionState
+      wsExists: !!state.connection.ws,
+      readyState: state.connection.ws?.readyState,
+      connectionState: state.connection.status
     });
 
     // Try to reconnect if not already trying
-    if (state.connectionState !== "connected" && state.reconnectAttempts === 0) {
+    if (state.connection.status !== "connected" && state.connection.reconnectAttempts === 0) {
       connect();
     }
 
@@ -576,7 +588,7 @@ function sendWsMessage(type: string, content: string = ""): boolean {
 
   try {
     const message = content ? { type, content } : { type };
-    state.ws!.send(JSON.stringify(message));
+    state.connection.ws!.send(JSON.stringify(message));
     console.log("Message sent:", type);
     return true;
   } catch (error) {
@@ -689,7 +701,7 @@ function handleSessionInfo(message: any) {
   }
 
   scrollToBottom();
-  state.isFirstConnection = false;
+  state.connection.isFirstConnection = false;
 }
 
 /**
@@ -716,7 +728,7 @@ function submitTask() {
   if (!task || state.isProcessing) return;
 
   // Check connection state before sending
-  if (state.connectionState !== "connected") {
+  if (state.connection.status !== "connected") {
     addSystemMessage("Cannot send task - not connected to server", "error");
     return;
   }
@@ -776,8 +788,8 @@ stopBtnEl.addEventListener("click", stopTask);
 
 // Handle beforeunload to close connection cleanly
 window.addEventListener('beforeunload', () => {
-  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-    state.ws.close(1000, 'Page unloading');
+  if (state.connection.ws && state.connection.ws.readyState === WebSocket.OPEN) {
+    state.connection.ws.close(1000, 'Page unloading');
   }
 });
 
