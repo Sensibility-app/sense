@@ -111,61 +111,48 @@ const agent = new AgentContext();
 // Reload manager for coordinating page reloads
 const reloadManager = new ReloadManager();
 
-// Helper function to execute git commands
-async function executeGitCommand(
-  args: string[],
-  processingMessage: string,
-  completeSummary: string,
-  broadcast: (message: ServerMessage) => void,
-  customHandler?: (code: number, output: string, errorOutput: string) => void
-): Promise<void> {
-  try {
-    broadcast({
-      type: "processing_status",
-      isProcessing: true,
-      message: processingMessage
-    });
+// Git status command
+async function runGitStatus(broadcast: BroadcastFn): Promise<void> {
+  broadcast({ type: "processing_status", isProcessing: true, message: "Running git status..." });
 
-    const cmd = new Deno.Command("git", {
-      args,
-      cwd: Deno.cwd(),
-      stdout: "piped",
-      stderr: "piped",
-    });
+  try {
+    const cmd = new Deno.Command("git", { args: ["status"], cwd: Deno.cwd(), stdout: "piped", stderr: "piped" });
     const { code, stdout, stderr } = await cmd.output();
     const output = new TextDecoder().decode(stdout);
     const errorOutput = new TextDecoder().decode(stderr);
 
-    // Use custom handler if provided, otherwise use default
-    if (customHandler) {
-      customHandler(code, output, errorOutput);
+    broadcast({ type: "assistant_response", content: code === 0 ? output : errorOutput });
+    broadcast({ type: "task_complete", summary: "Git status complete" });
+  } catch (error) {
+    broadcast({ type: "system", content: `Git error: ${error instanceof Error ? error.message : String(error)}`, level: "error" });
+  } finally {
+    broadcast({ type: "processing_status", isProcessing: false });
+  }
+}
+
+// Git diff command
+async function runGitDiff(broadcast: BroadcastFn): Promise<void> {
+  broadcast({ type: "processing_status", isProcessing: true, message: "Running git diff..." });
+
+  try {
+    const cmd = new Deno.Command("git", { args: ["diff"], cwd: Deno.cwd(), stdout: "piped", stderr: "piped" });
+    const { code, stdout, stderr } = await cmd.output();
+    const output = new TextDecoder().decode(stdout);
+    const errorOutput = new TextDecoder().decode(stderr);
+
+    if (code === 0 && output) {
+      broadcast({ type: "assistant_response", content: output });
+    } else if (code === 0 && !output) {
+      broadcast({ type: "system", content: "No changes to show", level: "info" });
     } else {
-      broadcast({
-        type: "assistant_response",
-        content: code === 0 ? output : errorOutput,
-      });
+      broadcast({ type: "system", content: `Git diff error: ${errorOutput}`, level: "error" });
     }
 
-    broadcast({
-      type: "processing_status",
-      isProcessing: false
-    });
-
-    broadcast({
-      type: "task_complete",
-      summary: completeSummary,
-    });
+    broadcast({ type: "task_complete", summary: "Git diff complete" });
   } catch (error) {
-    broadcast({
-      type: "system",
-      content: `Git error: ${error instanceof Error ? error.message : String(error)}`,
-      level: "error",
-    });
-
-    broadcast({
-      type: "processing_status",
-      isProcessing: false
-    });
+    broadcast({ type: "system", content: `Git error: ${error instanceof Error ? error.message : String(error)}`, level: "error" });
+  } finally {
+    broadcast({ type: "processing_status", isProcessing: false });
   }
 }
 
@@ -446,42 +433,12 @@ function handleWebSocket(socket: WebSocket) {
       }
 
       if (message.type === "git.status") {
-        await executeGitCommand(
-          ["status"],
-          "Running git status...",
-          "Git status complete",
-          broadcast
-        );
+        await runGitStatus(broadcast);
         return;
       }
 
       if (message.type === "git.diff") {
-        await executeGitCommand(
-          ["diff"],
-          "Running git diff...",
-          "Git diff complete",
-          broadcast,
-          (code, output, errorOutput) => {
-            if (code === 0 && output) {
-              broadcast({
-                type: "assistant_response",
-                content: output,
-              });
-            } else if (code === 0 && !output) {
-              broadcast({
-                type: "system",
-                content: "No changes to show",
-                level: "info",
-              });
-            } else {
-              broadcast({
-                type: "system",
-                content: `Git diff error: ${errorOutput}`,
-                level: "error",
-              });
-            }
-          }
-        );
+        await runGitDiff(broadcast);
         return;
       }
 
