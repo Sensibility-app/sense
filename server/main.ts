@@ -2,97 +2,12 @@ import { load } from "jsr:@std/dotenv@^0.225.0";
 import { continueConversation } from "./claude.ts";
 import { PersistentSession, archiveCurrentSession, formatSessionHistory, getLastUserMessage, type DisplayMessage } from "./persistent-session.ts";
 import { log, error } from "./logger.ts";
-import { setTranspileCallback, transpileFile } from "./transpile.ts";
+import { setTranspileCallback } from "./transpile.ts";
 import { type ClientMessage, type ServerMessage, formatTokenUsage } from "./server-types.ts";
 import { serveStaticFile } from "./file-server.ts";
 import { ReloadManager } from "./reload-manager.ts";
-// === Agent execution context ===
-type BroadcastFn = (message: any) => void;
-
-/**
- * Agent execution context - manages task lifecycle and stop requests
- */
-class AgentContext {
-  private stopRequested = false;
-  private runningTask: Promise<void> | null = null;
-  private broadcastFn: BroadcastFn | null = null;
-  private reloadManager: ReloadManager | null = null;
-
-  /**
-   * Set broadcast function for sending messages to clients
-   */
-  setBroadcast(broadcast: BroadcastFn): void {
-    this.broadcastFn = broadcast;
-  }
-
-  /**
-   * Set reload manager for handling page reloads
-   */
-  setReloadManager(manager: ReloadManager): void {
-    this.reloadManager = manager;
-  }
-
-  /**
-   * Check if agent is currently running
-   */
-  isRunning(): boolean {
-    return this.runningTask !== null;
-  }
-
-  /**
-   * Request agent to stop gracefully
-   */
-  requestStop(): void {
-    this.stopRequested = true;
-    log("🛑 Stop requested");
-  }
-
-  /**
-   * Check if stop was requested
-   */
-  shouldStop(): boolean {
-    return this.stopRequested;
-  }
-
-  /**
-   * Execute an agent task with automatic lifecycle management
-   */
-  async execute(
-    taskFn: (shouldStop: () => boolean) => Promise<void>
-  ): Promise<void> {
-    if (this.runningTask) {
-      throw new Error("Agent already running");
-    }
-
-    this.stopRequested = false;
-
-    try {
-      if (this.broadcastFn) {
-        this.broadcastFn({ type: "processing_status", isProcessing: true });
-      }
-
-      // Notify reload manager that task is starting
-      if (this.reloadManager) {
-        this.reloadManager.setTaskRunning(true);
-      }
-
-      this.runningTask = taskFn(() => this.shouldStop());
-      await this.runningTask;
-    } finally {
-      this.runningTask = null;
-      this.stopRequested = false;
-
-      if (this.broadcastFn) {
-        this.broadcastFn({ type: "processing_status", isProcessing: false });
-      }
-
-      // Notify reload manager that task is complete
-      if (this.reloadManager) {
-        this.reloadManager.setTaskRunning(false);
-      }
-    }
-  }
-}
+import { AgentContext, type BroadcastFn } from "./agent-context.ts";
+import { setupFileWatcher } from "./file-watcher.ts";
 
 // Load .env file
 await load({ export: true });
@@ -199,7 +114,7 @@ if (globalSession.needsResume()) {
 
 const PORT = 8080;
 
-// File watcher for hot reload
+// File watcher (initialized later)
 let fileWatcher: Deno.FsWatcher | null = null;
 
 // Setup transpile callback for client reload
@@ -212,62 +127,10 @@ setTranspileCallback((filepath: string, fromCache: boolean) => {
   }
 });
 
-// Setup file watcher for client files
-function setupFileWatcher() {
-  try {
-    fileWatcher = Deno.watchFs("./client");
-
-    (async () => {
-      if (!fileWatcher) return;
-
-      for await (const event of fileWatcher) {
-        if (event.kind === "modify") {
-          const changedPath = event.paths[0];
-          const changedFile = changedPath.split('/').pop();
-
-          // TypeScript files: transpile first, then reload via callback
-          if (changedPath.endsWith('.ts')) {
-            log(`📝 TypeScript file changed: ${changedFile}, triggering transpilation`);
-
-            try {
-              // Trigger proactive transpilation
-              // The transpile callback will handle broadcasting reload
-              await transpileFile(changedPath);
-            } catch (err) {
-              error(`❌ Transpilation failed for ${changedFile}:`, err);
-
-              // Broadcast error to clients (don't reload on error!)
-              broadcast({
-                type: "system",
-                content: `TypeScript error in ${changedFile}: ${err instanceof Error ? err.message : String(err)}`,
-                level: "error"
-              });
-            }
-          }
-          // Non-TypeScript files: request reload (reloadManager handles deferral)
-          else if (changedPath.endsWith('.css') ||
-                   changedPath.endsWith('.html') ||
-                   changedPath.endsWith('.js')) {
-            log(`📝 Client file changed: ${changedFile}`);
-            reloadManager.requestReload(`Client file updated: ${changedFile}`);
-          }
-        }
-      }
-    })().catch(err => {
-      error("File watcher error:", err);
-    });
-
-    log("👁️  File watcher enabled for ./client directory");
-  } catch (err) {
-    error("Failed to setup file watcher:", err);
-  }
-}
-
 // Cleanup function
 function cleanup() {
   if (fileWatcher) {
     fileWatcher.close();
-    fileWatcher = null;
   }
   setTranspileCallback(null);
 }
@@ -531,7 +394,7 @@ Deno.serve({ port: PORT }, async (req) => {
 });
 
 // Setup file watcher for hot reload
-setupFileWatcher();
+fileWatcher = setupFileWatcher(reloadManager, broadcast);
 
 // Cleanup on shutdown signals
 Deno.addSignalListener("SIGINT", () => {
