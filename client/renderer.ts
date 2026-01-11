@@ -92,10 +92,21 @@ export class Renderer {
   // ===========================================================================
 
   /**
-   * Scroll output to bottom with smooth animation
+   * Check if user is near the bottom of the output
+   */
+  private isNearBottom(): boolean {
+    if (!this.output) return false;
+    const threshold = 150; // pixels from bottom
+    const position = this.output.scrollTop + this.output.clientHeight;
+    const bottom = this.output.scrollHeight;
+    return bottom - position < threshold;
+  }
+
+  /**
+   * Scroll output to bottom with smooth animation (only if user is already near bottom)
    */
   scrollToBottom(): void {
-    if (this.output) {
+    if (this.output && this.isNearBottom()) {
       this.output.scrollTo({
         top: this.output.scrollHeight,
         behavior: 'smooth'
@@ -227,6 +238,7 @@ export class Renderer {
     // Try to render markdown in real-time (falls back to text if incomplete)
     this.parseMarkdown(state.render.currentAssistantText, content);
 
+    // Only scroll if user is following along
     this.scrollToBottom();
   }
 
