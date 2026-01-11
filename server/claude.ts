@@ -253,11 +253,17 @@ export async function* continueConversation(
           currentText = "";
         } else if (currentThinking) {
           // Thinking block completed (already streamed in real-time)
-          // Add redacted_thinking to history with data as string (base64-encoded signature)
-          assistantContent.push({
-            type: "redacted_thinking",
-            data: currentThinkingSignature || ""
-          } as any);
+          logDebug("Thinking completed. Signature:", currentThinkingSignature || "(empty)");
+          // Only add redacted_thinking to history if we have a valid signature
+          if (currentThinkingSignature && currentThinkingSignature.trim().length > 0) {
+            logDebug("Adding redacted_thinking to history");
+            assistantContent.push({
+              type: "redacted_thinking",
+              data: currentThinkingSignature
+            } as any);
+          } else {
+            logDebug("No valid signature, skipping redacted_thinking in history");
+          }
           currentThinking = "";
           currentThinkingSignature = "";
         } else if (currentToolUse) {
