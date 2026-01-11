@@ -152,11 +152,10 @@ export async function* continueConversation(
         messages: messages as Anthropic.MessageParam[],
         tools: toolsWithCache,
         stream: true,
-        // Thinking disabled - causes issues with tool calling signature validation
-        // thinking: {
-        //   type: "enabled",
-        //   budget_tokens: 10000
-        // },
+        // Explicitly disable thinking - causes signature validation issues
+        thinking: {
+          type: "disabled"
+        },
       };
       stream = await getClient().messages.create(createParams) as any;
     } catch (err: any) {
