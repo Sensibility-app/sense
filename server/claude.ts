@@ -135,9 +135,10 @@ export async function* continueConversation(
     );
 
     // Call Claude with streaming enabled and prompt caching
-    let stream;
+    let stream: AsyncIterable<Anthropic.MessageStreamEvent>;
     try {
-      stream = await getClient().messages.create({
+      // Cast to any to work around TypeScript SDK not having thinking types yet
+      const createParams: any = {
         model: CLAUDE_MODEL,
         max_tokens: 4096,
         // System prompt as array with cache_control for caching
@@ -146,12 +147,18 @@ export async function* continueConversation(
             type: "text",
             text: SYSTEM_PROMPT,
             cache_control: { type: "ephemeral" }
-          } as any
+          }
         ],
         messages: messages as Anthropic.MessageParam[],
-        tools: toolsWithCache as any,
+        tools: toolsWithCache,
         stream: true,
-      });
+        // Enable thinking blocks with full budget (TypeScript SDK doesn't have types yet)
+        thinking: {
+          type: "enabled",
+          budget_tokens: 10000
+        },
+      };
+      stream = await getClient().messages.create(createParams) as any;
     } catch (err: any) {
       // Log detailed error info for debugging 400 errors
       error("[ERROR] Claude API error:", err.message);
@@ -171,6 +178,7 @@ export async function* continueConversation(
     // Track assistant response content for conversation history
     const assistantContent: Array<Anthropic.TextBlock | Anthropic.ToolUseBlock> = [];
     let currentText = "";
+    let currentThinking = "";
     let currentToolUse: Anthropic.ToolUseBlock | null = null;
 
     // Accumulate tool results for batch saving (fixes 400 error)
@@ -194,6 +202,9 @@ export async function* continueConversation(
         if (block.type === "text") {
           // Starting a text block
           currentText = "";
+        } else if ((block as any).type === "thinking") {
+          // Starting a thinking block
+          currentThinking = "";
         } else if (block.type === "tool_use") {
           // Starting a tool use block
           currentToolUse = {
@@ -213,6 +224,9 @@ export async function* continueConversation(
           };
           if (onChunk) onChunk(textChunk);
           yield textChunk;
+        } else if ((chunk.delta as any).type === "thinking_delta") {
+          // Accumulate thinking content (don't stream in real-time)
+          currentThinking += (chunk.delta as any).thinking;
         } else if (chunk.delta.type === "input_json_delta" && currentToolUse) {
           // Tool input is being built up incrementally - accumulate as string
           if (typeof currentToolUse.input === "string") {
@@ -228,6 +242,16 @@ export async function* continueConversation(
             text: currentText,
           });
           currentText = "";
+        } else if (currentThinking) {
+          // Yield completed thinking block to client
+          const thinkingChunk: MessageChunk = {
+            type: "thinking",
+            content: currentThinking,
+          };
+          if (onChunk) onChunk(thinkingChunk);
+          yield thinkingChunk;
+          currentThinking = "";
+          // Note: thinking blocks are NOT added to assistantContent for conversation history
         } else if (currentToolUse) {
           // Parse the accumulated JSON input if it's a string
           if (typeof currentToolUse.input === "string") {
