@@ -413,13 +413,13 @@ export async function* continueConversation(
         ((assistantContent[0] as any).type === "thinking" ||
          (assistantContent[0] as any).type === "redacted_thinking");
 
-      // If we have tool_use but no thinking block at start, add placeholder redacted_thinking
+      // If we have tool_use but no thinking block at start, add placeholder thinking
       // This satisfies the API requirement that thinking must precede tool_use when enabled
       if (hasToolUse && !startsWithThinking) {
-        logDebug("Adding placeholder redacted_thinking before tool_use");
+        logDebug("Adding placeholder thinking block before tool_use");
         assistantContent.unshift({
-          type: "redacted_thinking",
-          data: "synthetic" // Placeholder for when model skips thinking
+          type: "thinking",
+          thinking: "" // Empty thinking when model goes straight to tools
         } as any);
       }
 
