@@ -157,6 +157,18 @@ export async function* continueConversation(
           type: "disabled"
         },
       };
+
+      // Debug: Log messages being sent to API
+      logDebug("Sending to API:", JSON.stringify({
+        messageCount: messages.length,
+        firstTwo: messages.slice(0, 2).map((m: any) => ({
+          role: m.role,
+          contentTypes: Array.isArray(m.content)
+            ? m.content.map((c: any) => c.type)
+            : typeof m.content
+        }))
+      }, null, 2));
+
       stream = await getClient().messages.create(createParams) as any;
     } catch (err: any) {
       // Log detailed error info for debugging 400 errors
