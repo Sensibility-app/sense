@@ -140,7 +140,7 @@ export async function* continueConversation(
       // Cast to any to work around TypeScript SDK not having thinking types yet
       const createParams: any = {
         model: CLAUDE_MODEL,
-        max_tokens: 4096,
+        max_tokens: 16000, // Must be > thinking.budget_tokens (10k thinking + 6k response)
         // System prompt as array with cache_control for caching
         system: [
           {
