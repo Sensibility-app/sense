@@ -79,6 +79,7 @@ ws.onmessage = (event) => {
     case "ping":
     case "session_info":
     case "processing_status":
+    case "user_message":
       break;
 
     default:
