@@ -407,6 +407,22 @@ export async function* continueConversation(
     // BATCH SAVE: Save assistant message + all tool results in one user message
     // This fixes the 400 error where tool_use blocks didn't have matching tool_result blocks
     if (toolResults.size > 0) {
+      // When thinking is enabled, ensure assistant messages with tool_use start with thinking
+      const hasToolUse = assistantContent.some((block) => block.type === "tool_use");
+      const startsWithThinking = assistantContent[0] &&
+        ((assistantContent[0] as any).type === "thinking" ||
+         (assistantContent[0] as any).type === "redacted_thinking");
+
+      // If we have tool_use but no thinking block at start, add placeholder redacted_thinking
+      // This satisfies the API requirement that thinking must precede tool_use when enabled
+      if (hasToolUse && !startsWithThinking) {
+        logDebug("Adding placeholder redacted_thinking before tool_use");
+        assistantContent.unshift({
+          type: "redacted_thinking",
+          data: "synthetic" // Placeholder for when model skips thinking
+        } as any);
+      }
+
       // Create assistant message with all tool_use blocks
       const assistantMessage = {
         role: "assistant" as const,
