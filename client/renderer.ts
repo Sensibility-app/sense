@@ -251,11 +251,15 @@ export class Renderer {
   }
 
   /**
-   * Add thinking block to output (expanded by default)
+   * Start streaming thinking block
    */
-  addThinkingBlock(content: string): void {
-    const block = document.createElement("div");
-    block.className = "thinking-block";
+  startThinkingBlock(): void {
+    // Finish any existing thinking block first
+    this.finishThinkingBlock();
+
+    state.render.currentThinkingBlock = document.createElement("div");
+    state.render.currentThinkingBlock.className = "thinking-block";
+    state.render.currentThinkingText = "";
 
     const header = document.createElement("div");
     header.className = "thinking-header";
@@ -263,7 +267,7 @@ export class Renderer {
 
     const thinkingContent = document.createElement("div");
     thinkingContent.className = "thinking-content";
-    thinkingContent.textContent = content;
+    thinkingContent.textContent = "";
 
     // Make header collapsible
     header.onclick = () => {
@@ -274,10 +278,37 @@ export class Renderer {
         : "▼";
     };
 
-    block.appendChild(header);
-    block.appendChild(thinkingContent);
-    this.output.appendChild(block);
+    state.render.currentThinkingBlock.appendChild(header);
+    state.render.currentThinkingBlock.appendChild(thinkingContent);
+    this.output.appendChild(state.render.currentThinkingBlock);
     this.scrollToBottom();
+  }
+
+  /**
+   * Append text to streaming thinking block
+   */
+  appendToThinkingBlock(text: string): void {
+    if (!state.render.currentThinkingBlock) {
+      this.startThinkingBlock();
+    }
+
+    state.render.currentThinkingText += text;
+    const content = state.render.currentThinkingBlock!.querySelector(
+      ".thinking-content"
+    ) as HTMLElement;
+
+    content.textContent = state.render.currentThinkingText;
+    this.scrollToBottom();
+  }
+
+  /**
+   * Finish streaming thinking block
+   */
+  finishThinkingBlock(): void {
+    if (state.render.currentThinkingBlock) {
+      state.render.currentThinkingBlock = null;
+      state.render.currentThinkingText = "";
+    }
   }
 
   /**

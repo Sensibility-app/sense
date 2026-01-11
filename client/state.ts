@@ -21,6 +21,8 @@ export interface ConnectionState {
 export interface RenderState {
   currentAssistantMessage: HTMLDivElement | null;
   currentAssistantText: string;
+  currentThinkingBlock: HTMLDivElement | null;
+  currentThinkingText: string;
 }
 
 export interface AppState {
@@ -45,6 +47,8 @@ export const state: AppState = {
   render: {
     currentAssistantMessage: null,
     currentAssistantText: "",
+    currentThinkingBlock: null,
+    currentThinkingText: "",
   },
   isProcessing: false,
 };

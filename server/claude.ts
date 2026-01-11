@@ -225,8 +225,14 @@ export async function* continueConversation(
           if (onChunk) onChunk(textChunk);
           yield textChunk;
         } else if ((chunk.delta as any).type === "thinking_delta") {
-          // Accumulate thinking content (don't stream in real-time)
+          // Stream thinking content in real-time
           currentThinking += (chunk.delta as any).thinking;
+          const thinkingChunk: MessageChunk = {
+            type: "thinking",
+            content: (chunk.delta as any).thinking,
+          };
+          if (onChunk) onChunk(thinkingChunk);
+          yield thinkingChunk;
         } else if (chunk.delta.type === "input_json_delta" && currentToolUse) {
           // Tool input is being built up incrementally - accumulate as string
           if (typeof currentToolUse.input === "string") {
@@ -243,13 +249,7 @@ export async function* continueConversation(
           });
           currentText = "";
         } else if (currentThinking) {
-          // Yield completed thinking block to client
-          const thinkingChunk: MessageChunk = {
-            type: "thinking",
-            content: currentThinking,
-          };
-          if (onChunk) onChunk(thinkingChunk);
-          yield thinkingChunk;
+          // Thinking block completed (already streamed in real-time)
           currentThinking = "";
           // Note: thinking blocks are NOT added to assistantContent for conversation history
         } else if (currentToolUse) {

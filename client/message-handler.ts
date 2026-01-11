@@ -58,6 +58,8 @@ export class MessageHandler {
         break;
 
       case "text_delta":
+        // Close thinking block when text starts
+        this.renderer.finishThinkingBlock();
         this.renderer.appendToAssistantMessage(message.content);
         break;
 
@@ -70,7 +72,7 @@ export class MessageHandler {
         break;
 
       case "thinking":
-        this.renderer.addThinkingBlock(message.content);
+        this.renderer.appendToThinkingBlock(message.content);
         break;
 
       case "system":
@@ -78,6 +80,7 @@ export class MessageHandler {
         break;
 
       case "task_complete":
+        this.renderer.finishThinkingBlock();
         this.renderer.finishAssistantMessage();
         this.renderer.scrollToBottom();
         break;
@@ -120,7 +123,10 @@ export class MessageHandler {
         } else if (entry.type === "system") {
           this.renderer.addSystemMessage(entry.content, "info");
         } else if (entry.type === "thinking") {
-          this.renderer.addThinkingBlock(entry.content);
+          // For history, render thinking as complete block
+          this.renderer.startThinkingBlock();
+          this.renderer.appendToThinkingBlock(entry.content);
+          this.renderer.finishThinkingBlock();
         }
       });
     }

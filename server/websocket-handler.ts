@@ -216,7 +216,7 @@ export class WebSocketHandler {
               this.globalSession,
               shouldStop,
               undefined,
-              false
+              true // resumeMode: true because message is already in history
             )) {
               this.handleAgentEvent(chunk);
             }
