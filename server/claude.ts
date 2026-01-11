@@ -250,8 +250,12 @@ export async function* continueConversation(
           currentText = "";
         } else if (currentThinking) {
           // Thinking block completed (already streamed in real-time)
+          // MUST add to assistantContent for conversation history when thinking is enabled
+          assistantContent.push({
+            type: "thinking",
+            thinking: currentThinking,
+          } as any);
           currentThinking = "";
-          // Note: thinking blocks are NOT added to assistantContent for conversation history
         } else if (currentToolUse) {
           // Parse the accumulated JSON input if it's a string
           if (typeof currentToolUse.input === "string") {
