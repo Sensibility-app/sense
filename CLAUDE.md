@@ -58,6 +58,34 @@ For architecture details, available tools, repository structure, and development
 **Why Validation Everywhere:**
 In a self-modifying application, Claude may write code with syntax errors. Validation ensures these errors don't take down the running server - instead, you see the error message and the server keeps running with the old code until the error is fixed.
 
+## Testing & Debugging
+
+**WebSocket Test Client:**
+Use `ws_client.ts` to test the WebSocket API directly without the browser:
+
+```bash
+# Basic usage
+deno run --allow-net ws_client.ts "What is 2+2?"
+
+# Clear session before sending
+deno run --allow-net ws_client.ts --clear "Start fresh conversation"
+
+# Test thinking blocks
+deno run --allow-net ws_client.ts "Solve a complex problem"
+```
+
+**Features:**
+- Real-time streaming output (thinking blocks shown as 💭)
+- Error reporting with clear indicators
+- Automatic cleanup and timeout handling
+- Token usage display
+
+**When to use:**
+- Test API changes without browser
+- Verify thinking block streaming
+- Debug multi-turn conversations
+- Quick functional testing during development
+
 ## Historical Files
 
 **DO NOT DELETE**: The following files have historical significance and should be preserved:
