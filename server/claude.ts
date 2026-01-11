@@ -179,6 +179,7 @@ export async function* continueConversation(
     const assistantContent: Array<Anthropic.TextBlock | Anthropic.ToolUseBlock> = [];
     let currentText = "";
     let currentThinking = "";
+    let currentThinkingSignature = "";
     let currentToolUse: Anthropic.ToolUseBlock | null = null;
 
     // Accumulate tool results for batch saving (fixes 400 error)
@@ -203,8 +204,9 @@ export async function* continueConversation(
           // Starting a text block
           currentText = "";
         } else if ((block as any).type === "thinking") {
-          // Starting a thinking block
+          // Starting a thinking block - capture signature
           currentThinking = "";
+          currentThinkingSignature = (block as any).signature || "";
         } else if (block.type === "tool_use") {
           // Starting a tool use block
           currentToolUse = {
@@ -254,8 +256,10 @@ export async function* continueConversation(
           assistantContent.push({
             type: "thinking",
             thinking: currentThinking,
+            signature: currentThinkingSignature,
           } as any);
           currentThinking = "";
+          currentThinkingSignature = "";
         } else if (currentToolUse) {
           // Parse the accumulated JSON input if it's a string
           if (typeof currentToolUse.input === "string") {
