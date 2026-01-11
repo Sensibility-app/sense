@@ -253,9 +253,12 @@ export async function* continueConversation(
           currentText = "";
         } else if (currentThinking) {
           // Thinking block completed (already streamed in real-time)
-          // Add redacted_thinking to history without signature field
+          // Add redacted_thinking to history with required data field
           assistantContent.push({
             type: "redacted_thinking",
+            data: {
+              signature: currentThinkingSignature || "sha256:placeholder"
+            }
           } as any);
           currentThinking = "";
           currentThinkingSignature = "";
