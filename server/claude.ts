@@ -253,7 +253,10 @@ export async function* continueConversation(
           currentText = "";
         } else if (currentThinking) {
           // Thinking block completed (already streamed in real-time)
-          // Don't add to conversation history - thinking is ephemeral and only for current turn
+          // Add redacted_thinking to history without signature field
+          assistantContent.push({
+            type: "redacted_thinking",
+          } as any);
           currentThinking = "";
           currentThinkingSignature = "";
         } else if (currentToolUse) {
