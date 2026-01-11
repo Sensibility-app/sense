@@ -140,7 +140,7 @@ export async function* continueConversation(
       // Cast to any to work around TypeScript SDK not having thinking types yet
       const createParams: any = {
         model: CLAUDE_MODEL,
-        max_tokens: 16000, // Must be > thinking.budget_tokens (10k thinking + 6k response)
+        max_tokens: 8192, // Restore to reasonable default
         // System prompt as array with cache_control for caching
         system: [
           {
@@ -152,11 +152,11 @@ export async function* continueConversation(
         messages: messages as Anthropic.MessageParam[],
         tools: toolsWithCache,
         stream: true,
-        // Enable thinking blocks with full budget (TypeScript SDK doesn't have types yet)
-        thinking: {
-          type: "enabled",
-          budget_tokens: 10000
-        },
+        // Thinking disabled - causes issues with tool calling signature validation
+        // thinking: {
+        //   type: "enabled",
+        //   budget_tokens: 10000
+        // },
       };
       stream = await getClient().messages.create(createParams) as any;
     } catch (err: any) {
