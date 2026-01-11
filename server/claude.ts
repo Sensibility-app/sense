@@ -178,8 +178,6 @@ export async function* continueConversation(
     // Track assistant response content for conversation history
     const assistantContent: Array<Anthropic.TextBlock | Anthropic.ToolUseBlock> = [];
     let currentText = "";
-    let currentThinking = "";
-    let currentThinkingSignature = "";
     let currentToolUse: Anthropic.ToolUseBlock | null = null;
 
     // Accumulate tool results for batch saving (fixes 400 error)
@@ -203,11 +201,6 @@ export async function* continueConversation(
         if (block.type === "text") {
           // Starting a text block
           currentText = "";
-        } else if ((block as any).type === "thinking") {
-          // Starting a thinking block - capture signature
-          currentThinking = "";
-          currentThinkingSignature = (block as any).signature || "";
-          logDebug("Thinking block started with signature:", currentThinkingSignature);
         } else if (block.type === "tool_use") {
           // Starting a tool use block
           currentToolUse = {
@@ -227,15 +220,6 @@ export async function* continueConversation(
           };
           if (onChunk) onChunk(textChunk);
           yield textChunk;
-        } else if ((chunk.delta as any).type === "thinking_delta") {
-          // Stream thinking content in real-time
-          currentThinking += (chunk.delta as any).thinking;
-          const thinkingChunk: MessageChunk = {
-            type: "thinking",
-            content: (chunk.delta as any).thinking,
-          };
-          if (onChunk) onChunk(thinkingChunk);
-          yield thinkingChunk;
         } else if (chunk.delta.type === "input_json_delta" && currentToolUse) {
           // Tool input is being built up incrementally - accumulate as string
           if (typeof currentToolUse.input === "string") {
@@ -251,21 +235,6 @@ export async function* continueConversation(
             text: currentText,
           });
           currentText = "";
-        } else if (currentThinking) {
-          // Thinking block completed (already streamed in real-time)
-          logDebug("Thinking completed. Signature:", currentThinkingSignature || "(empty)");
-          // Only add redacted_thinking to history if we have a valid signature
-          if (currentThinkingSignature && currentThinkingSignature.trim().length > 0) {
-            logDebug("Adding redacted_thinking to history");
-            assistantContent.push({
-              type: "redacted_thinking",
-              data: currentThinkingSignature
-            } as any);
-          } else {
-            logDebug("No valid signature, skipping redacted_thinking in history");
-          }
-          currentThinking = "";
-          currentThinkingSignature = "";
         } else if (currentToolUse) {
           // Parse the accumulated JSON input if it's a string
           if (typeof currentToolUse.input === "string") {
@@ -407,22 +376,6 @@ export async function* continueConversation(
     // BATCH SAVE: Save assistant message + all tool results in one user message
     // This fixes the 400 error where tool_use blocks didn't have matching tool_result blocks
     if (toolResults.size > 0) {
-      // When thinking is enabled, ensure assistant messages with tool_use start with thinking
-      const hasToolUse = assistantContent.some((block) => block.type === "tool_use");
-      const startsWithThinking = assistantContent[0] &&
-        ((assistantContent[0] as any).type === "thinking" ||
-         (assistantContent[0] as any).type === "redacted_thinking");
-
-      // If we have tool_use but no thinking block at start, add placeholder thinking
-      // This satisfies the API requirement that thinking must precede tool_use when enabled
-      if (hasToolUse && !startsWithThinking) {
-        logDebug("Adding placeholder thinking block before tool_use");
-        assistantContent.unshift({
-          type: "thinking",
-          thinking: "" // Empty thinking when model goes straight to tools
-        } as any);
-      }
-
       // Create assistant message with all tool_use blocks
       const assistantMessage = {
         role: "assistant" as const,
