@@ -207,6 +207,7 @@ export async function* continueConversation(
           // Starting a thinking block - capture signature
           currentThinking = "";
           currentThinkingSignature = (block as any).signature || "";
+          logDebug("Thinking block started with signature:", currentThinkingSignature);
         } else if (block.type === "tool_use") {
           // Starting a tool use block
           currentToolUse = {
@@ -252,12 +253,7 @@ export async function* continueConversation(
           currentText = "";
         } else if (currentThinking) {
           // Thinking block completed (already streamed in real-time)
-          // MUST add to assistantContent for conversation history when thinking is enabled
-          // Use redacted_thinking for history - the model's thinking with proper signature
-          assistantContent.push({
-            type: "redacted_thinking",
-            signature: currentThinkingSignature || "default",
-          } as any);
+          // Don't add to conversation history - thinking is ephemeral and only for current turn
           currentThinking = "";
           currentThinkingSignature = "";
         } else if (currentToolUse) {
