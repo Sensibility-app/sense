@@ -253,10 +253,10 @@ export async function* continueConversation(
         } else if (currentThinking) {
           // Thinking block completed (already streamed in real-time)
           // MUST add to assistantContent for conversation history when thinking is enabled
+          // Use redacted_thinking for history - the model's thinking with proper signature
           assistantContent.push({
-            type: "thinking",
-            thinking: currentThinking,
-            signature: currentThinkingSignature,
+            type: "redacted_thinking",
+            signature: currentThinkingSignature || "default",
           } as any);
           currentThinking = "";
           currentThinkingSignature = "";
