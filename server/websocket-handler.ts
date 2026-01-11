@@ -44,6 +44,8 @@ export class WebSocketHandler {
   handleAgentEvent(chunk: any): void {
     if (chunk.type === "text_delta") {
       this.broadcast({ type: "text_delta", content: chunk.content });
+    } else if (chunk.type === "thinking") {
+      this.broadcast({ type: "thinking", content: chunk.content });
     } else if (chunk.type === "tool_complete") {
       // Format tool execution as markdown and broadcast as text_delta
       const markdown = formatToolAsMarkdown({
