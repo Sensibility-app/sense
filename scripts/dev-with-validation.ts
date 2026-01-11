@@ -65,13 +65,13 @@ async function restartServer() {
 
 // Start initial server
 console.log("Sense server with validation and hot-reload");
-console.log("Watching: ./server, ./client");
+console.log("Watching: ./server (client hot-reload handled by server)");
 console.log("Validation enabled - syntax errors won't crash the server\n");
 
 serverProcess = startServer();
 
-// Watch for file changes
-const watcher = Deno.watchFs(["./server", "./client"]);
+// Watch for file changes (only server - client has its own hot-reload)
+const watcher = Deno.watchFs(["./server"]);
 
 // Debounce rapid file changes
 let debounceTimer: number | null = null;
@@ -87,8 +87,8 @@ for await (const event of watcher) {
 
   if (paths.length === 0) continue;
 
-  // Only restart on modify or create events
-  if (event.kind === "modify" || event.kind === "create") {
+  // Only restart on modify, create, or remove events
+  if (event.kind === "modify" || event.kind === "create" || event.kind === "remove") {
     // Debounce: wait 100ms for more changes
     if (debounceTimer !== null) {
       clearTimeout(debounceTimer);

@@ -30,7 +30,7 @@ IDENTITY & AWARENESS:
 - Be CAUTIOUS with self-modification - you're changing code that's running
 
 SELF-HOSTING BEHAVIOR:
-- Server auto-reloads on file changes (use reload_server for immediate reload)
+- Server auto-reloads on file changes (modify, create, delete)
 - Test changes carefully - breaking changes affect your own operation
 - Read files before editing to understand current state
 - When user asks to "improve your UI" - they mean YOUR interface (not an external app)

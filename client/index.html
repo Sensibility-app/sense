@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
 
   <!-- Mobile theme colors -->
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -14,24 +14,26 @@
   <link rel="stylesheet" href="/client/styles.css">
 </head>
 <body>
-  <header>
-    <h1>Sense</h1>
-    <div class="header-info">
-      <div id="tokenInfo" class="status" style="display: none;"></div>
-      <div class="status reconnecting" id="status">Connecting...</div>
-    </div>
-  </header>
+  <div class="app">
+    <header>
+      <h1>Sense</h1>
+      <div class="header-info">
+        <div id="tokenInfo" class="status" style="display: none;"></div>
+        <div class="status reconnecting" id="status">Connecting...</div>
+      </div>
+    </header>
 
-  <main>
-    <div class="output" id="output">
-    </div>
-  </main>
+    <main>
+      <div class="output" id="output">
+      </div>
+    </main>
 
-  <div class="input-area">
-    <div class="task-input-wrapper">
-      <textarea id="taskInput" placeholder="Ask me anything..." autofocus></textarea>
-      <button id="submitBtn">↑</button>
-      <button id="stopBtn" style="display: none;">■</button>
+    <div class="input-area">
+      <div class="task-input-wrapper">
+        <textarea id="taskInput" placeholder="Ask me anything..." autofocus inputmode="text" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+        <button id="submitBtn">↑</button>
+        <button id="stopBtn" style="display: none;">■</button>
+      </div>
     </div>
   </div>
 

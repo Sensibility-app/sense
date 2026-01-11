@@ -74,9 +74,15 @@ taskInput.addEventListener("keydown", (e) => {
   }
 });
 
-// Task submission handlers
-submitBtn.addEventListener("click", () => messageHandler.submitTask());
-stopBtn.addEventListener("click", () => messageHandler.stopTask());
+// Task submission handlers with haptic feedback
+submitBtn.addEventListener("click", () => {
+  hapticFeedback('medium');
+  messageHandler.submitTask();
+});
+stopBtn.addEventListener("click", () => {
+  hapticFeedback('heavy');
+  messageHandler.stopTask();
+});
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
@@ -84,43 +90,109 @@ window.addEventListener('beforeunload', () => {
 });
 
 // =============================================================================
-// LAYOUT FIXES
+// UTILITY FUNCTIONS
 // =============================================================================
 
-// Calculate and apply padding dynamically for fixed header/footer
-function updateMainPadding() {
-  const header = document.querySelector('header') as HTMLElement;
-  const inputArea = document.querySelector('.input-area') as HTMLElement;
-  const main = document.querySelector('main') as HTMLElement;
-
-  if (header && inputArea && main) {
-    const headerHeight = header.offsetHeight;
-    const inputHeight = inputArea.offsetHeight;
-
-    main.style.paddingTop = `${headerHeight}px`;
-    main.style.paddingBottom = `${inputHeight}px`;
+// Haptic feedback helper for mobile devices
+function hapticFeedback(style: 'light' | 'medium' | 'heavy' = 'light') {
+  if ('vibrate' in navigator) {
+    const patterns = {
+      light: 10,
+      medium: 20,
+      heavy: 30
+    };
+    navigator.vibrate(patterns[style]);
   }
 }
 
-// Mobile keyboard handling - adjust height when keyboard appears
+// =============================================================================
+// LAYOUT FIXES - Visual Viewport Height Management
+// =============================================================================
+
+let lastH = -1;
+let lastTop = -1;
+
+function resetVVCache() {
+  lastH = -1;
+  lastTop = -1;
+}
+
+// Sync visual viewport to handle iOS keyboard and panning behavior
+function syncVisualViewport(force = false) {
+  const vv = window.visualViewport;
+  if (!vv) return;
+
+  // Round to reduce sub-pixel churn during keyboard animation
+  const h = Math.round(vv.height);
+  const top = Math.round(vv.offsetTop);
+
+  // Only write when actually changed (prevents late "extra" jump writes)
+  // Or force write when explicitly requested
+  if (force || h !== lastH) {
+    document.documentElement.style.setProperty('--app-height', `${h}px`);
+    lastH = h;
+  }
+
+  if (force || top !== lastTop) {
+    document.documentElement.style.setProperty('--vv-top', `${top}px`);
+    lastTop = top;
+  }
+}
+
+// Reset cache on focus/blur to ensure updates during keyboard transitions
 taskInput.addEventListener('focus', () => {
-  setTimeout(() => updateMainPadding(), 100);
+  resetVVCache();
+  let n = 0;
+  const pump = () => {
+    syncVisualViewport(true);
+    if (++n < 6) requestAnimationFrame(pump);
+  };
+  requestAnimationFrame(pump);
+});
+taskInput.addEventListener('blur', () => {
+  resetVVCache();
+  syncVisualViewport(true);
 });
 
-taskInput.addEventListener('blur', () => {
-  setTimeout(() => updateMainPadding(), 100);
+window.visualViewport?.addEventListener('resize', syncVisualViewport);
+window.visualViewport?.addEventListener('scroll', syncVisualViewport); // IMPORTANT on iOS
+window.addEventListener('resize', syncVisualViewport);
+
+syncVisualViewport();
+
+// =============================================================================
+// TOUCH SCROLL LOCK - Prevent page scrolling except in #output
+// =============================================================================
+
+// Prevent touch scrolling everywhere except inside the #output container
+// This stops iOS from turning the whole page into a scrollable surface when keyboard is up
+document.addEventListener(
+  'touchmove',
+  (e) => {
+    // Allow scrolling only inside the output container
+    if (!e.target || !(e.target as HTMLElement).closest('#output')) {
+      e.preventDefault();
+    }
+  },
+  { passive: false }
+);
+
+// =============================================================================
+// SCROLL DETECTION
+// =============================================================================
+
+// Detect scroll position for gradient overlay
+output.addEventListener('scroll', () => {
+  if (output.scrollTop > 10) {
+    output.classList.add('scrolled');
+  } else {
+    output.classList.remove('scrolled');
+  }
 });
 
 // =============================================================================
 // STARTUP
 // =============================================================================
-
-// Update padding on load and resize
-window.addEventListener('load', updateMainPadding);
-window.addEventListener('resize', updateMainPadding);
-
-// Initial padding update
-updateMainPadding();
 
 // Auto-connect on page load
 connection.connect();

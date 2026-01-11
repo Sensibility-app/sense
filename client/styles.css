@@ -1,4 +1,15 @@
 :root {
+  /* === LAYOUT DIMENSIONS === */
+  --app-height: 100dvh; /* fallback, updated by JS */
+  --vv-top: 0px; /* visual viewport offset for iOS panning */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --header-h: 60px;
+  --footer-h: 80px;
+
+  /* === EXISTING BASE COLORS === */
   --bg-primary: #ffffff;
   --bg-primary-rgb: 255, 255, 255;
   --bg-secondary: #f5f5f7;
@@ -15,10 +26,62 @@
   --tool-color: #ff9500;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   --font-mono: 'SF Mono', Monaco, Menlo, Consolas, monospace;
+
+  /* === NEW: GRADIENT COLORS === */
+  --gradient-primary-start: #007aff;
+  --gradient-primary-end: #00d4ff;
+  --gradient-accent-start: #0066ff;
+  --gradient-accent-end: #00e5ff;
+  --gradient-soft-start: rgba(255, 255, 255, 0.05);
+  --gradient-soft-end: rgba(255, 255, 255, 0.01);
+
+  /* === NEW: DEPTH & SHADOW LAYERS === */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --shadow-xl: 0 16px 64px rgba(0, 0, 0, 0.12);
+  --shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.06);
+
+  /* === NEW: NEOMORPHISM SHADOWS === */
+  --neo-shadow-light: 6px 6px 12px rgba(163, 177, 198, 0.3);
+  --neo-shadow-dark: -6px -6px 12px rgba(255, 255, 255, 0.5);
+  --neo-shadow-inset-light: inset 4px 4px 8px rgba(163, 177, 198, 0.2);
+  --neo-shadow-inset-dark: inset -4px -4px 8px rgba(255, 255, 255, 0.4);
+
+  /* === NEW: GLASSMORPHISM EFFECTS === */
+  --glass-blur: 40px;
+  --glass-blur-strong: 60px;
+  --glass-saturation: 180%;
+  --glass-brightness: 1.05;
+  --glass-bg-opacity: 0.7;
+  --glass-border: rgba(255, 255, 255, 0.18);
+
+  /* === NEW: SPATIAL DEPTH (Z-LAYERS) === */
+  --z-base: 0;
+  --z-elevated: 10;
+  --z-float: 20;
+  --z-overlay: 50;
+  --z-modal: 100;
+  --z-header: 100;
+  --z-input: 100;
+
+  /* === NEW: ANIMATION TIMINGS === */
+  --transition-fast: 0.15s;
+  --transition-normal: 0.3s;
+  --transition-slow: 0.5s;
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-elastic: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  /* === NEW: ATMOSPHERIC EFFECTS === */
+  --atmosphere-glow: 0 0 40px rgba(0, 122, 255, 0.15);
+  --atmosphere-glow-strong: 0 0 60px rgba(0, 122, 255, 0.25);
+  --message-ambient: 0 0 20px rgba(0, 122, 255, 0.05);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    /* === EXISTING DARK MODE BASE === */
     --bg-primary: #000000;
     --bg-primary-rgb: 0, 0, 0;
     --bg-secondary: #1c1c1e;
@@ -34,6 +97,37 @@
     --error-bg: #3a1a1a;
     --tool-color: #ff9f0a;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+
+    /* === DARK MODE: GRADIENT COLORS === */
+    --gradient-primary-start: #0a84ff;
+    --gradient-primary-end: #00ffdd;
+    --gradient-accent-start: #0a84ff;
+    --gradient-accent-end: #00e5ff;
+    --gradient-soft-start: rgba(255, 255, 255, 0.08);
+    --gradient-soft-end: rgba(255, 255, 255, 0.02);
+
+    /* === DARK MODE: SHADOWS (deeper, more atmospheric) === */
+    --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 8px 48px rgba(0, 0, 0, 0.7);
+    --shadow-xl: 0 16px 80px rgba(0, 0, 0, 0.8);
+    --shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+
+    /* === NEW: DARK MODE NEOMORPHISM === */
+    --neo-shadow-light: 6px 6px 12px rgba(0, 0, 0, 0.5);
+    --neo-shadow-dark: -6px -6px 12px rgba(255, 255, 255, 0.02);
+    --neo-shadow-inset-light: inset 4px 4px 8px rgba(0, 0, 0, 0.4);
+    --neo-shadow-inset-dark: inset -4px -4px 8px rgba(255, 255, 255, 0.02);
+
+    /* === NEW: DARK MODE GLASSMORPHISM === */
+    --glass-bg-opacity: 0.5;
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-brightness: 1.1;
+
+    /* === NEW: DARK MODE ATMOSPHERE === */
+    --atmosphere-glow: 0 0 50px rgba(10, 132, 255, 0.3);
+    --atmosphere-glow-strong: 0 0 80px rgba(10, 132, 255, 0.4);
+    --message-ambient: 0 0 30px rgba(10, 132, 255, 0.1);
   }
 }
 
@@ -48,58 +142,142 @@
   display: none;
 }
 
+/* === HARD-LOCK PAGE SCROLL === */
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden; /* prevents any document scrolling */
+  touch-action: none; /* stops pan scrolling on touch devices */
+}
+
 body {
+  /* Prevents "page scroll past app" on iOS */
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.5;
-  background: var(--bg-primary);
   color: var(--text-primary);
 
-  /* iOS viewport support with fallback */
-  height: 100vh;
-  height: 100dvh;
+  /* === ATMOSPHERIC GRADIENT BACKGROUND === */
+  background: radial-gradient(
+    ellipse at 50% -50%,
+    rgba(0, 122, 255, 0.03) 0%,
+    var(--bg-primary) 50%,
+    var(--bg-primary) 100%
+  );
 
-  /* Prevent bounce scrolling on iOS */
-  position: fixed;
-  width: 100%;
-  overflow: hidden;
   overscroll-behavior: none;
+}
 
-  padding-left: env(safe-area-inset-left, 0);
-  padding-right: env(safe-area-inset-right, 0);
+/* === FIXED ROOT CONTAINER WITH FLEXBOX LAYOUT === */
+.app {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: auto;       /* explicit - prevents iOS weirdness with inset + height */
+  height: var(--app-height);
+  
+  /* CRITICAL: Include safe-area padding inside height, not add to it */
+  box-sizing: border-box;
+  
+  display: flex;
+  flex-direction: column;
+  
+  /* Safe area padding on the entire app container */
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+  
+  /* SCROLL CONTAINMENT: Only .output scrolls, nothing else */
+  overflow: hidden;
+  
+  /* Make the fixed app follow the panned visual viewport on iOS */
+  transform: translateY(var(--vv-top));
+  will-change: transform;
 }
 
 header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
+  /* === FLEX LAYOUT: Fixed height header === */
+  flex: 0 0 var(--header-h);
+  min-height: var(--header-h);
 
-  /* Semi-transparent background for iOS style */
-  background: rgba(var(--bg-primary-rgb), 0.95);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* === ENHANCED GLASSMORPHISM === */
+  background: linear-gradient(
+    135deg,
+    rgba(var(--bg-primary-rgb), var(--glass-bg-opacity)) 0%,
+    rgba(var(--bg-primary-rgb), calc(var(--glass-bg-opacity) - 0.1)) 100%
+  );
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
 
-  /* iOS safe area support */
-  padding-top: max(clamp(12px, 3vw, 16px), env(safe-area-inset-top, 0));
-  padding-left: max(clamp(16px, 5vw, 24px), env(safe-area-inset-left, 0));
-  padding-right: max(clamp(16px, 5vw, 24px), env(safe-area-inset-right, 0));
-  padding-bottom: clamp(12px, 3vw, 16px);
+  /* === SPATIAL DEPTH === */
+  box-shadow:
+    0 1px 0 0 var(--glass-border) inset,
+    var(--shadow-lg),
+    var(--atmosphere-glow);
 
-  border-bottom: 1px solid var(--border-color);
+  /* === GRADIENT BORDER === */
+  border-bottom: 1px solid transparent;
+  border-image: linear-gradient(
+    90deg,
+    transparent,
+    var(--glass-border),
+    transparent
+  ) 1;
+
+  /* Internal padding (safe areas handled by .app) */
+  padding: clamp(12px, 3vw, 16px) clamp(16px, 5vw, 24px);
+
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: clamp(12px, 2vw, 16px);
+
+  /* === SMOOTH TRANSITIONS === */
+  transition: box-shadow var(--transition-normal) var(--ease-smooth),
+              background var(--transition-normal) var(--ease-smooth);
+
+  /* === GPU ACCELERATION === */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  isolation: isolate;
+}
+
+/* Hover effect for header (subtle interaction) */
+header:hover {
+  box-shadow:
+    0 1px 0 0 var(--glass-border) inset,
+    var(--shadow-xl),
+    var(--atmosphere-glow-strong);
 }
 
 h1 {
   font-size: clamp(18px, 4vw, 20px);
   font-weight: 600;
   letter-spacing: -0.3px;
-  color: var(--text-primary);
+
+  /* === SUBTLE GRADIENT TEXT === */
+  background: linear-gradient(
+    135deg,
+    var(--text-primary) 0%,
+    var(--gradient-primary-start) 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Fallback for browsers that don't support gradient text */
+@supports not (-webkit-background-clip: text) {
+  h1 {
+    color: var(--text-primary);
+  }
 }
 
 .header-info {
@@ -116,11 +294,26 @@ h1 {
 
 .status.connected {
   color: var(--success-color);
+  text-shadow: 0 0 10px rgba(52, 199, 89, 0.3);
 }
 
 .status.reconnecting {
-  color: var(--accent-color);
-  animation: pulse 1.5s ease-in-out infinite alternate;
+  background: linear-gradient(
+    90deg,
+    var(--accent-color) 0%,
+    var(--gradient-primary-end) 50%,
+    var(--accent-color) 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  background-size: 200% 100%;
+  animation: gradientSlide 2s ease-in-out infinite;
+}
+
+@keyframes gradientSlide {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
 
 .status.error {
@@ -133,21 +326,22 @@ h1 {
 }
 
 main {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-
-  /* Padding for fixed header/footer - will be updated dynamically by JS */
-  padding-top: 60px;
-  padding-bottom: 80px;
-
+  /* === FLEX LAYOUT: Flexible content area === */
+  flex: 1 1 auto;
+  min-height: 0; /* ✅ CRITICAL: allows flex item to shrink below content size */
+  
+  /* SCROLL CONTAINMENT: Prevent main from scrolling */
   overflow: hidden;
+  
+  /* No positioning needed - flex handles it */
+  position: relative;
 }
 
-.output {
+#output.output {
   height: 100%;
+  min-height: 0; /* ✅ CRITICAL: prevents flex overflow creating page scroll */
+  
+  /* SCROLL CONTAINMENT: This is the ONLY scrollable element */
   overflow-y: auto;
   overflow-x: hidden;
 
@@ -155,20 +349,157 @@ main {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 
+  /* Allow vertical scroll gestures only in the chat output */
+  touch-action: pan-y;
+
   padding: clamp(12px, 4vw, 24px);
-  background: var(--bg-primary);
+
+  /* === LAYERED BACKGROUND === */
+  background: transparent;
+  position: relative;
+}
+
+/* Add subtle gradient overlay on scroll for depth */
+.output::before {
+  content: '';
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(
+    180deg,
+    var(--bg-primary) 0%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: var(--z-elevated);
+  opacity: 0;
+  transition: opacity var(--transition-normal) var(--ease-smooth);
+}
+
+.output.scrolled::before {
+  opacity: 1;
 }
 
 /* Let the system handle scrollbars naturally (respects OS preferences) */
 
 .message {
-  margin-bottom: 24px;
-  animation: fadeIn 0.2s ease;
+  margin-bottom: 16px;
+  position: relative;
+
+  /* Base styles - overridden by specific message types */
+  background: transparent;
+  border-radius: 16px;
+  padding: 8px 0;
+
+  /* === SMOOTH ENTRY === */
+  animation: messageSlideIn 0.4s var(--ease-smooth);
+  transform-origin: center top;
+
+  /* === SLIGHT ELEVATION === */
+  transition: all var(--transition-normal) var(--ease-smooth);
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Remove gap between consecutive assistant messages */
+.message.assistant + .message.assistant {
+  margin-top: -8px;
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Default hover - minimal */
+.message:hover {
+  transform: none;
+}
+
+/* User messages - compact bubble on the right */
+.message.user {
+  background: linear-gradient(
+    135deg,
+    var(--bg-secondary) 0%,
+    var(--bg-primary) 100%
+  );
+  border: 1px solid var(--border-color);
+  animation: messageSlideInRight 0.4s var(--ease-smooth);
+  max-width: 80%;
+  margin-left: auto;
+  margin-right: 0;
+  padding: 12px 16px;
+  border-radius: 18px 18px 4px 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.message.user:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+@keyframes messageSlideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px) translateY(10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+}
+
+/* Assistant messages - flat, no bubble */
+.message.assistant {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  padding: 8px 0;
+  animation: messageSlideInLeft 0.4s var(--ease-smooth);
+}
+
+@keyframes messageSlideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px) translateY(10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+}
+
+.message.assistant:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* System messages - subtle and flat */
+.message.system {
+  background: transparent;
+  box-shadow: none;
+  padding: 12px 16px;
+  border-left: 3px solid var(--border-color);
+  border-radius: 0 8px 8px 0;
+}
+
+.message.system:hover {
+  transform: none;
+}
+
+/* Error messages - warning appearance */
+.message.error {
+  background: var(--error-bg);
+  border: 1px solid var(--error-color);
+  box-shadow:
+    var(--shadow-sm),
+    0 0 20px rgba(255, 59, 48, 0.1);
 }
 
 .message-content {
@@ -178,11 +509,11 @@ main {
 }
 
 .message.user .message-content {
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 .message.assistant .message-content {
-  /* Keep assistant messages with default styling for better readability */
+  color: var(--text-primary);
 }
 
 .message.system .message-content {
@@ -234,13 +565,25 @@ main {
 .message-content pre {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 12px 14px;
   overflow-x: auto;
   margin: 12px 0;
   position: relative;
   max-width: 100%;
   -webkit-overflow-scrolling: touch;
+
+  /* === DEPTH === */
+  box-shadow: var(--shadow-sm), var(--neo-shadow-inset-light);
+
+  /* === SMOOTH TRANSITIONS === */
+  transition: all var(--transition-normal) var(--ease-smooth);
+}
+
+.message-content pre:hover {
+  box-shadow: var(--shadow-md), var(--neo-shadow-inset-light);
+  transform: translateY(-1px);
+  border-color: var(--accent-color);
 }
 
 .message-content pre code {
@@ -271,10 +614,29 @@ main {
 .message-content a {
   color: var(--accent-color);
   text-decoration: none;
+  position: relative;
+  transition: color var(--transition-fast) var(--ease-smooth);
 }
 
-.message-content a:hover {
-  text-decoration: underline;
+.message-content a::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--gradient-primary-start),
+    var(--gradient-primary-end)
+  );
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--transition-normal) var(--ease-smooth);
+}
+
+.message-content a:hover::after {
+  transform: scaleX(1);
 }
 
 .message-content strong {
@@ -317,11 +679,23 @@ main {
 }
 
 .thinking-block {
-  background: var(--bg-tertiary);
+  background: linear-gradient(
+    135deg,
+    var(--bg-secondary) 0%,
+    var(--bg-tertiary) 100%
+  );
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: 12px;
   margin-bottom: 16px;
   overflow: hidden;
+
+  /* === SOFT DEPTH === */
+  box-shadow:
+    var(--shadow-sm),
+    var(--neo-shadow-inset-light);
+
+  /* === SMOOTH TRANSITIONS === */
+  transition: all var(--transition-normal) var(--ease-smooth);
 }
 
 .thinking-header {
@@ -334,29 +708,90 @@ main {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-tertiary);
+  position: relative;
+
+  /* === GRADIENT OVERLAY === */
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 122, 255, 0.03) 50%,
+    transparent 100%
+  );
+
+  transition: all var(--transition-fast) var(--ease-smooth);
 }
 
 .thinking-header:hover {
-  background: var(--bg-secondary);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 122, 255, 0.06) 50%,
+    transparent 100%
+  );
+  color: var(--text-secondary);
+}
+
+.thinking-header:active {
+  background: var(--bg-tertiary);
+  transform: scale(0.99);
 }
 
 .thinking-content {
-  padding: clamp(12px, 2vw, 12px) clamp(14px, 3vw, 16px);
+  padding: clamp(12px, 2vw, 14px) clamp(14px, 3vw, 16px);
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-secondary);
   border-top: 1px solid var(--border-color);
   white-space: pre-wrap;
   font-family: var(--font-mono);
+
+  /* === INNER SHADOW FOR DEPTH === */
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.02) 0%,
+    transparent 20%
+  );
+  box-shadow: var(--shadow-inner);
+
+  /* === SMOOTH EXPANSION === */
+  animation: expandContent 0.3s var(--ease-smooth);
+  transform-origin: top;
+}
+
+@keyframes expandContent {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: scaleY(0.9);
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+    transform: scaleY(1);
+  }
 }
 
 /* Tool rendering as HTML details/summary */
 .message-content details {
-  background: var(--bg-tertiary);
+  background: linear-gradient(
+    135deg,
+    var(--bg-secondary) 0%,
+    var(--bg-tertiary) 100%
+  );
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  margin: 12px 0;
+  border-radius: 10px;
+  margin: 8px 0;
   overflow: hidden;
+  box-shadow:
+    var(--shadow-sm),
+    var(--neo-shadow-inset-light);
+  transition: all var(--transition-normal) var(--ease-smooth);
+}
+
+.message-content details:hover {
+  box-shadow:
+    var(--shadow-md),
+    var(--neo-shadow-inset-light);
 }
 
 .message-content details summary {
@@ -368,6 +803,37 @@ main {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
   list-style: none; /* Remove default arrow */
+
+  /* Single line - force everything inline and clip */
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  
+  /* Proper height for single line */
+  line-height: 1.6;
+  min-height: calc(1.6em + 4px);
+
+  /* === GRADIENT HIGHLIGHT === */
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 149, 0, 0.05) 50%,
+    transparent 100%
+  );
+
+  transition: all var(--transition-fast) var(--ease-smooth);
+}
+
+/* Force all child elements in summary to display inline */
+.message-content details summary * {
+  display: inline !important;
+  white-space: nowrap !important;
+}
+
+/* Remove any line breaks in summary */
+.message-content details summary br {
+  display: none !important;
 }
 
 .message-content details summary::-webkit-details-marker {
@@ -375,11 +841,18 @@ main {
 }
 
 .message-content details summary:hover {
-  background: var(--bg-secondary);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 149, 0, 0.08) 50%,
+    transparent 100%
+  );
+  color: var(--text-secondary);
 }
 
 .message-content details[open] summary {
   border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
 }
 
 .message-content details > div,
@@ -387,6 +860,14 @@ main {
   padding: 12px 14px;
   font-size: 13px;
   line-height: 1.5;
+
+  /* === INNER DEPTH === */
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.02) 0%,
+    transparent 15%
+  );
+  box-shadow: var(--shadow-inner);
 }
 
 .message-content details.tool-error {
@@ -444,70 +925,118 @@ main {
   color: var(--error-color);
 }
 
-.streaming-cursor::after {
-  content: '▋';
-  animation: blink 1s infinite;
-  margin-left: 2px;
-}
-
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
+/* Streaming cursor removed - no visual indicator needed */
 
 .input-area {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
+  /* === FLEX LAYOUT: Fixed height footer === */
+  flex: 0 0 var(--footer-h);
+  min-height: var(--footer-h);
 
-  /* Semi-transparent background for iOS style */
-  background: rgba(var(--bg-primary-rgb), 0.95);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* === ENHANCED GLASSMORPHISM (stronger than header) === */
+  background: linear-gradient(
+    0deg,
+    rgba(var(--bg-primary-rgb), var(--glass-bg-opacity)) 0%,
+    rgba(var(--bg-primary-rgb), calc(var(--glass-bg-opacity) - 0.15)) 100%
+  );
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
 
-  /* iOS safe area support for home indicator */
-  padding-left: max(clamp(16px, 5vw, 24px), env(safe-area-inset-left, 0));
-  padding-right: max(clamp(16px, 5vw, 24px), env(safe-area-inset-right, 0));
-  padding-top: 12px;
-  padding-bottom: max(12px, env(safe-area-inset-bottom, 0));
+  /* === SPATIAL DEPTH === */
+  box-shadow:
+    0 -1px 0 0 var(--glass-border) inset,
+    0 -8px 32px rgba(0, 0, 0, 0.1),
+    var(--atmosphere-glow);
 
-  border-top: 1px solid var(--border-color);
+  /* === GRADIENT BORDER === */
+  border-top: 1px solid transparent;
+  border-image: linear-gradient(
+    90deg,
+    transparent,
+    var(--glass-border),
+    transparent
+  ) 1;
+
+  /* Internal padding (safe areas handled by .app) */
+  padding: 12px clamp(16px, 5vw, 24px);
+
+  /* === SMOOTH TRANSITIONS === */
+  transition: box-shadow var(--transition-normal) var(--ease-smooth),
+              background var(--transition-normal) var(--ease-smooth);
+
+  /* === GPU ACCELERATION === */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  isolation: isolate;
+}
+
+/* Focused state - stronger glow */
+.input-area:has(textarea:focus) {
+  box-shadow:
+    0 -1px 0 0 var(--glass-border) inset,
+    0 -12px 48px rgba(0, 0, 0, 0.15),
+    var(--atmosphere-glow-strong);
 }
 
 button {
-  background: transparent;
-  color: var(--text-tertiary);
-  border: none;
+  /* Keep base structure */
   padding: 0;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   border-radius: 50%;
   cursor: pointer;
   font-size: 16px;
   font-weight: 400;
   font-family: inherit;
-  transition: all 0.15s ease;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-}
+  border: none;
 
-button:hover:not(:disabled) {
-  background: var(--bg-tertiary);
+  /* === NEOMORPHISM BASE === */
+  background: linear-gradient(145deg, var(--bg-secondary), var(--bg-tertiary));
   color: var(--text-primary);
+
+  /* === SOFT SHADOWS === */
+  box-shadow:
+    var(--neo-shadow-light),
+    var(--neo-shadow-dark),
+    0 1px 2px rgba(0, 0, 0, 0.1);
+
+  /* === SMOOTH TRANSITIONS === */
+  transition: all var(--transition-fast) var(--ease-smooth);
+  position: relative;
+  overflow: hidden;
 }
 
+/* Hover state - slight lift */
+button:hover:not(:disabled) {
+  background: linear-gradient(145deg, var(--bg-tertiary), var(--bg-secondary));
+  box-shadow:
+    var(--neo-shadow-light),
+    var(--neo-shadow-dark),
+    0 2px 8px rgba(0, 0, 0, 0.15),
+    var(--atmosphere-glow);
+  transform: translateY(-1px);
+}
+
+/* Active/pressed state - inset shadow */
 button:active:not(:disabled) {
-  transform: scale(0.95);
+  box-shadow:
+    var(--neo-shadow-inset-light),
+    var(--neo-shadow-inset-dark);
+  transform: translateY(0) scale(0.96);
+  background: linear-gradient(145deg, var(--bg-tertiary), var(--bg-secondary));
 }
 
+/* Disabled state */
 button:disabled {
   color: var(--text-tertiary);
   cursor: not-allowed;
-  opacity: 0.4;
+  opacity: 0.5;
+  box-shadow: none;
 }
 
 #submitBtn,
@@ -515,28 +1044,122 @@ button:disabled {
   flex-shrink: 0;
 }
 
+/* Submit button - accent color when enabled */
+#submitBtn:not(:disabled) {
+  background: linear-gradient(
+    135deg,
+    var(--gradient-primary-start),
+    var(--gradient-primary-end)
+  );
+  color: white;
+  box-shadow:
+    0 4px 12px rgba(0, 122, 255, 0.3),
+    var(--neo-shadow-light),
+    var(--neo-shadow-dark);
+}
+
+#submitBtn:hover:not(:disabled) {
+  box-shadow:
+    0 6px 20px rgba(0, 122, 255, 0.4),
+    var(--atmosphere-glow-strong);
+  transform: translateY(-2px);
+}
+
+#submitBtn:active:not(:disabled) {
+  box-shadow:
+    0 2px 8px rgba(0, 122, 255, 0.3),
+    var(--neo-shadow-inset-light);
+}
+
+/* Stop button - error color */
 #stopBtn {
+  background: linear-gradient(145deg,
+    rgba(255, 59, 48, 0.15),
+    rgba(255, 59, 48, 0.05)
+  );
   color: var(--error-color);
+  box-shadow:
+    0 4px 12px rgba(255, 59, 48, 0.2),
+    var(--neo-shadow-light),
+    var(--neo-shadow-dark);
 }
 
 .task-input-wrapper {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--bg-secondary);
+  gap: 12px;
+  border-radius: 12px;
+  padding: 8px 12px;
+  position: relative;
+
+  /* === NEOMORPHIC INSET === */
+  background: linear-gradient(
+    145deg,
+    var(--bg-tertiary),
+    var(--bg-secondary)
+  );
+
+  /* === INSET SHADOW === */
+  box-shadow:
+    var(--neo-shadow-inset-light),
+    var(--neo-shadow-inset-dark),
+    0 1px 2px rgba(255, 255, 255, 0.1) inset;
+
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 0 12px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  /* === SMOOTH TRANSITIONS === */
+  transition: all var(--transition-normal) var(--ease-smooth);
 }
 
+/* Focus state - lift from inset to raised */
 .task-input-wrapper:focus-within {
+  background: linear-gradient(
+    145deg,
+    var(--bg-secondary),
+    var(--bg-primary)
+  );
+
+  /* === LIFTED SHADOW === */
+  box-shadow:
+    0 4px 16px rgba(0, 122, 255, 0.15),
+    var(--neo-shadow-light),
+    var(--neo-shadow-dark),
+    0 0 0 3px rgba(0, 122, 255, 0.1);
+
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+/* Animated gradient outline on focus */
+.task-input-wrapper:focus-within::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 12px;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    var(--gradient-accent-start) 0%,
+    var(--gradient-accent-end) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.6;
+  pointer-events: none;
+  animation: gradientShift 3s ease infinite;
+}
+
+@keyframes gradientShift {
+  0%, 100% { filter: hue-rotate(0deg); }
+  50% { filter: hue-rotate(10deg); }
 }
 
 textarea {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0; /* Allow flex item to shrink below content size */
   background: transparent;
   border: none;
   color: var(--text-primary);
@@ -551,6 +1174,11 @@ textarea {
   overflow-x: hidden;
   -webkit-appearance: none;
   border-radius: 0;
+
+  /* iOS-specific fixes for keyboard */
+  /* Disable autocomplete features that trigger the accessory bar */
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 textarea:focus {
@@ -561,14 +1189,45 @@ textarea::placeholder {
   color: var(--text-tertiary);
 }
 
-/* Processing state - textarea stays enabled, visual feedback only */
-.task-input-wrapper {
-  position: relative;
+/* iOS Safari: Ensure input area stays visible when keyboard opens */
+@supports (-webkit-touch-callout: none) {
+  /* This targets iOS Safari specifically */
+  .input-area {
+    /* Add extra bottom padding to account for keyboard accessory bar */
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0));
+  }
+
+  /* When textarea is focused, ensure it's scrolled into view */
+  textarea:focus {
+    /* iOS will handle scrolling into view, but we need to ensure
+       the parent container allows it */
+    scroll-margin-bottom: 80px;
+  }
 }
 
+/* Processing state - subtle glow */
 .task-input-wrapper.processing {
   border-color: var(--accent-color);
-  background: var(--bg-secondary);
+  box-shadow:
+    var(--neo-shadow-inset-light),
+    var(--neo-shadow-inset-dark),
+    0 0 20px rgba(0, 122, 255, 0.2);
+  animation: processing-pulse 2s ease-in-out infinite;
+}
+
+@keyframes processing-pulse {
+  0%, 100% {
+    box-shadow:
+      var(--neo-shadow-inset-light),
+      var(--neo-shadow-inset-dark),
+      0 0 20px rgba(0, 122, 255, 0.2);
+  }
+  50% {
+    box-shadow:
+      var(--neo-shadow-inset-light),
+      var(--neo-shadow-inset-dark),
+      0 0 30px rgba(0, 122, 255, 0.3);
+  }
 }
 
 .working {
@@ -592,28 +1251,68 @@ textarea::placeholder {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 10px;
   margin-bottom: 12px;
   font-size: 13px;
   color: var(--text-tertiary);
-  animation: fadeIn 0.2s ease;
+  position: relative;
+  overflow: hidden;
+
+  /* === GLASSMORPHIC BACKGROUND === */
+  background: linear-gradient(
+    135deg,
+    rgba(var(--bg-primary-rgb), 0.8),
+    rgba(var(--bg-primary-rgb), 0.6)
+  );
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+
+  /* === DEPTH === */
+  box-shadow: var(--shadow-md), var(--message-ambient);
+
+  /* === ENTRY ANIMATION === */
+  animation: toolSlideIn 0.3s var(--ease-bounce);
+}
+
+@keyframes toolSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Animated background shimmer */
+.tool-executing::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 122, 255, 0.1) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  to { transform: translateX(100%); }
 }
 
 .tool-icon {
   font-size: 16px;
   animation: rotate 2s linear infinite;
+  filter: drop-shadow(0 0 4px rgba(0, 122, 255, 0.3));
 }
 
 @keyframes rotate {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 .tool-label {
@@ -629,4 +1328,173 @@ textarea::placeholder {
   border-top-color: var(--accent-color);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+  box-shadow: 0 0 8px rgba(0, 122, 255, 0.3);
+}
+
+/* Custom scrollbar styling removed - using native scrollbars */
+
+/* === ACCESSIBILITY & PERFORMANCE === */
+
+/* GPU acceleration hints */
+.message,
+.tool-executing,
+button,
+.task-input-wrapper,
+.thinking-block {
+  will-change: transform, opacity;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Keep essential visual effects but remove motion */
+  .message {
+    animation: none;
+  }
+
+  .tool-executing {
+    animation: none;
+  }
+
+  .tool-icon {
+    animation: none;
+  }
+
+  .streaming-cursor::after {
+    animation: cursorBlink 1s infinite; /* Keep blink only */
+  }
+
+  button:hover:not(:disabled) {
+    transform: none;
+  }
+
+  .task-input-wrapper:focus-within {
+    transform: none;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+
+  .message {
+    border: 2px solid var(--border-color);
+  }
+
+  button {
+    border: 2px solid var(--border-color);
+  }
+
+  .thinking-block,
+  .message-content details {
+    border: 2px solid var(--border-color);
+  }
+}
+
+/* === RESPONSIVE DESIGN === */
+
+/* Mobile optimizations (< 768px) */
+@media (max-width: 768px) {
+  :root {
+    --glass-blur: 30px;
+    --glass-blur-strong: 40px;
+    --shadow-lg: 0 6px 24px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Reduce neomorphism intensity on mobile */
+  button {
+    box-shadow:
+      0 2px 8px rgba(0, 0, 0, 0.1),
+      0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+
+  .message {
+    padding: 12px 16px;
+    border-radius: 12px;
+  }
+
+  /* Simplify animations on mobile */
+  .message {
+    animation-duration: 0.3s;
+  }
+
+  /* Reduce glow effects to save battery */
+  header:hover,
+  .input-area:has(textarea:focus) {
+    box-shadow: var(--shadow-md);
+  }
+}
+
+/* Tablet landscape (769px - 1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  :root {
+    --glass-blur: 35px;
+    --glass-blur-strong: 50px;
+  }
+}
+
+/* Desktop large screens (1440px+) */
+@media (min-width: 1440px) {
+  :root {
+    --glass-blur: 50px;
+    --glass-blur-strong: 70px;
+  }
+
+  .message {
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* === DARK MODE REFINEMENTS === */
+
+@media (prefers-color-scheme: dark) {
+  /* Stronger atmospheric effects in dark mode */
+  .message.assistant {
+    box-shadow:
+      var(--shadow-md),
+      0 0 50px rgba(10, 132, 255, 0.15),
+      0 0 1px var(--accent-color);
+  }
+
+  .message.assistant:hover {
+    box-shadow:
+      var(--shadow-lg),
+      0 0 70px rgba(10, 132, 255, 0.25);
+  }
+
+  /* Deeper inset for input in dark mode */
+  .task-input-wrapper {
+    box-shadow:
+      inset 0 2px 6px rgba(0, 0, 0, 0.6),
+      inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Brighter submit button in dark mode */
+  #submitBtn:not(:disabled) {
+    box-shadow:
+      0 4px 16px rgba(10, 132, 255, 0.5),
+      0 0 20px rgba(10, 132, 255, 0.3);
+  }
+
+  /* Code blocks with deeper inset */
+  .message-content pre {
+    box-shadow:
+      inset 0 2px 8px rgba(0, 0, 0, 0.5),
+      0 1px 2px rgba(255, 255, 255, 0.05);
+  }
 }

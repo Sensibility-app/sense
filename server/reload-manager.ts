@@ -37,7 +37,7 @@ export class ReloadManager {
   }
 
   /**
-   * Request a page reload (will be deferred if task is running)
+   * Request a page reload (triggers immediately)
    */
   requestReload(reason: string): void {
     // Ignore reloads during startup grace period (prevents reload loops on initial load)
@@ -47,22 +47,8 @@ export class ReloadManager {
       return;
     }
 
-    if (this.taskRunning) {
-      log(`Deferring reload: ${reason}`);
-      this.pendingReload = true;
-      this.pendingReason = reason;
-
-      // Notify clients
-      if (this.broadcastFn) {
-        this.broadcastFn({
-          type: "system",
-          content: `${reason} - page will reload after task completes`,
-          level: "info"
-        });
-      }
-    } else {
-      this.triggerReload(reason);
-    }
+    // Trigger reload immediately (no deferral, no info messages)
+    this.triggerReload(reason);
   }
 
   /**

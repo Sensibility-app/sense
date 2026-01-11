@@ -92,11 +92,14 @@ export class Renderer {
   // ===========================================================================
 
   /**
-   * Scroll output to bottom
+   * Scroll output to bottom with smooth animation
    */
   scrollToBottom(): void {
     if (this.output) {
-      this.output.scrollTop = this.output.scrollHeight;
+      this.output.scrollTo({
+        top: this.output.scrollHeight,
+        behavior: 'smooth'
+      });
     }
   }
 
