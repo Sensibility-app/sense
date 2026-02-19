@@ -1,36 +1,110 @@
-/**
- * WebSocket handler
- * Manages WebSocket connections, message routing, and client broadcasting
- */
-
 import { log, error } from "./logger.ts";
-import { continueConversation } from "./claude.ts";
-import { archiveCurrentSession, formatSessionHistory, type PersistentSession } from "./persistent-session.ts";
-import { type ClientMessage, type ServerMessage, formatTokenUsage } from "./server-types.ts";
-import type { AgentContext, BroadcastFn } from "./agent-context.ts";
-import { formatToolAsMarkdown } from "./tools/_shared/tool-formatter.ts";
+import { continueConversation, type StreamEvent } from "./claude.ts";
+import { type PersistentSession, createTurn } from "./persistent-session.ts";
+import type { ClientMessage, ServerMessage, TokenUsage, ToolInfo, Block } from "../shared/messages.ts";
+import { CONFIG } from "./config.ts";
+import { executeTool, loadTools } from "./tools-loader.ts";
 
-/**
- * WebSocket handler class
- * Encapsulates all WebSocket connection logic and message handling
- */
+function getTokenUsage(session: PersistentSession): TokenUsage {
+  const usage = session.getTokenUsage();
+  return {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+  };
+}
+
+interface ClientConnection {
+  socket: WebSocket;
+  clientId: string;
+  lastClientPing: number;
+}
+
 export class WebSocketHandler {
-  private connectedClients = new Set<WebSocket>();
+  private connectedClients = new Map<WebSocket, ClientConnection>();
+  private cleanupInterval?: number;
+  private stopRequested = false;
+  private runningTask: Promise<void> | null = null;
+  private currentTaskId: string | null = null;
+  private currentThinking = "";
+  private currentText = "";
 
-  constructor(
-    private globalSession: PersistentSession,
-    private agent: AgentContext
-  ) {}
+  constructor(private globalSession: PersistentSession) {
+    this.startCleanupInterval();
+  }
 
-  /**
-   * Broadcast message to all connected clients
-   */
+  isRunning(): boolean {
+    return this.runningTask !== null;
+  }
+
+  requestStop(): void {
+    this.stopRequested = true;
+    log("Stop requested");
+  }
+
+  private shouldStop(): boolean {
+    return this.stopRequested;
+  }
+
+  async execute(taskFn: (shouldStop: () => boolean) => Promise<void>): Promise<void> {
+    if (this.runningTask) {
+      throw new Error("Agent already running");
+    }
+    this.stopRequested = false;
+    try {
+      this.runningTask = taskFn(() => this.shouldStop());
+      await this.runningTask;
+    } finally {
+      this.runningTask = null;
+      this.stopRequested = false;
+    }
+  }
+
+  private startCleanupInterval(): void {
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupDeadConnections();
+    }, CONFIG.WEBSOCKET_PING_INTERVAL_MS);
+  }
+
+  private cleanupDeadConnections(): void {
+    const now = Date.now();
+    for (const [socket, conn] of this.connectedClients) {
+      if (socket.readyState !== WebSocket.OPEN) {
+        this.removeClient(socket);
+        continue;
+      }
+
+      const timeSinceLastPing = now - conn.lastClientPing;
+      if (timeSinceLastPing > CONFIG.WEBSOCKET_PONG_TIMEOUT_MS * 2) {
+        log(`Client ${conn.clientId} timed out, closing`);
+        socket.close();
+        this.removeClient(socket);
+      }
+    }
+  }
+
+  private removeClient(socket: WebSocket): void {
+    this.connectedClients.delete(socket);
+  }
+
+  shutdown(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    for (const [socket] of this.connectedClients) {
+      socket.close();
+    }
+    this.connectedClients.clear();
+  }
+
   broadcast(msg: ServerMessage): void {
     const payload = JSON.stringify(msg);
-    for (const client of this.connectedClients) {
-      if (client.readyState === WebSocket.OPEN) {
+    for (const [socket] of this.connectedClients) {
+      if (socket.readyState === WebSocket.OPEN) {
         try {
-          client.send(payload);
+          socket.send(payload);
         } catch (err) {
           error("Failed to send to client:", err);
         }
@@ -38,55 +112,64 @@ export class WebSocketHandler {
     }
   }
 
-  /**
-   * Handle agent events and broadcast to clients
-   */
-  handleAgentEvent(chunk: any): void {
-    if (chunk.type === "text_delta") {
-      this.broadcast({ type: "text_delta", content: chunk.content });
-    } else if (chunk.type === "thinking") {
-      this.broadcast({ type: "thinking", content: chunk.content });
-    } else if (chunk.type === "tool_complete") {
-      // Format tool execution as markdown and broadcast as text_delta
-      const markdown = formatToolAsMarkdown({
-        toolName: chunk.toolName!,
-        toolId: chunk.toolId!,
-        toolInput: chunk.toolInput,
-        toolResult: chunk.content,
-        isError: chunk.isError || false,
-      });
-      this.broadcast({
-        type: "text_delta",
-        content: "\n\n" + markdown + "\n\n",
-      });
-    } else if (chunk.type === "token_usage" && chunk.tokenUsage) {
-      this.globalSession.addTokenUsage(chunk.tokenUsage);
-      const totalUsage = this.globalSession.getTokenUsage();
-      this.broadcast({
-        type: "token_usage",
-        usage: totalUsage,
-        formatted: formatTokenUsage(totalUsage),
-      });
-    } else if (chunk.type === "complete") {
-      this.broadcast({
-        type: "task_complete",
-        summary: "Task completed"
-      });
+  handleStreamEvent(event: StreamEvent): void {
+    const taskId = this.currentTaskId || "unknown";
+    
+    switch (event.type) {
+      case "thinking_delta":
+        this.currentThinking += event.content;
+        this.broadcast({ type: "thinking_delta", taskId, content: event.content });
+        break;
+      case "text_delta":
+        this.currentText += event.content;
+        this.broadcast({ type: "text_delta", taskId, content: event.content });
+        break;
+      case "tool_use":
+        this.broadcast({ type: "tool_use", taskId, toolId: event.toolId, toolName: event.toolName, toolInput: event.toolInput });
+        break;
+      case "tool_result":
+        this.broadcast({ type: "tool_result", taskId, toolId: event.toolId, toolOutput: event.toolOutput, toolError: event.toolError });
+        break;
+      case "turn_complete":
+        const lastTurn = this.globalSession.getLastTurn();
+        const role = lastTurn?.role === "assistant" ? "user" : "assistant";
+        this.globalSession.addTurn(createTurn(role as "user" | "assistant", event.blocks, taskId));
+        this.broadcast({ type: "turn_complete", taskId });
+        // Clear accumulated content after turn completes
+        this.currentThinking = "";
+        this.currentText = "";
+        break;
+      case "token_usage":
+        this.globalSession.addTokenUsage(event.usage);
+        this.broadcast({ type: "token_usage", usage: getTokenUsage(this.globalSession) });
+        break;
+      case "complete":
+        this.broadcast({ type: "task_complete", taskId });
+        this.currentTaskId = null;
+        this.currentThinking = "";
+        this.currentText = "";
+        break;
     }
   }
 
-  /**
-   * Handle new WebSocket connection
-   */
-  handleConnection(socket: WebSocket): void {
-    // Generate client ID for tracking
+  handleConnection(socket: WebSocket): boolean {
+    if (this.connectedClients.size >= CONFIG.MAX_WEBSOCKET_CONNECTIONS) {
+      log(`Connection rejected: max connections (${CONFIG.MAX_WEBSOCKET_CONNECTIONS}) reached`);
+      socket.close(1013, "Max connections reached");
+      return false;
+    }
+
     const clientId = Math.random().toString(36).substring(2, 8);
-    log(`Client ${clientId} connected`);
+    log(`Client ${clientId} connected (${this.connectedClients.size + 1}/${CONFIG.MAX_WEBSOCKET_CONNECTIONS})`);
 
-    // Add to connected clients
-    this.connectedClients.add(socket);
+    const conn: ClientConnection = {
+      socket,
+      clientId,
+      lastClientPing: Date.now(),
+    };
 
-    // Helper to send to just this client
+    this.connectedClients.set(socket, conn);
+
     const sendToClient = (msg: ServerMessage) => {
       if (socket.readyState === WebSocket.OPEN) {
         try {
@@ -97,163 +180,146 @@ export class WebSocketHandler {
       }
     };
 
-    // Send initial session info
-    const sendSessionInfo = () => {
-      const messages = this.globalSession.getMessages();
-      const tokenUsage = this.globalSession.getTokenUsage();
-      const sizeInfo = this.globalSession.getSessionSizeInfo();
-      const history = formatSessionHistory(messages);
+    const sendSessionInfo = async () => {
+      const tools = await loadTools();
+      const toolInfos: ToolInfo[] = tools.map(t => ({
+        name: t.definition.name,
+        description: t.definition.description,
+        parameters: Object.entries(t.definition.input_schema.properties || {}).map(([name, prop]) => ({
+          name,
+          type: (prop as { type: string }).type,
+          description: (prop as { description: string }).description,
+          required: t.definition.input_schema.required?.includes(name) ?? false,
+        })),
+      }));
 
       sendToClient({
         type: "session_info",
-        messageCount: messages.length,
-        tokenUsage,
-        history,
-        isTaskRunning: this.agent.isRunning(),
-        contextSize: {
-          estimatedTokens: sizeInfo.estimatedTokens,
-          bytes: sizeInfo.bytes,
-        },
+        history: this.globalSession.getTurns(),
+        tokenUsage: getTokenUsage(this.globalSession),
+        tools: toolInfos,
       });
+
+      // If there's a task in progress, send the accumulated content
+      if (this.currentTaskId) {
+        if (this.currentThinking) {
+          sendToClient({
+            type: "thinking_delta",
+            taskId: this.currentTaskId,
+            content: this.currentThinking,
+          });
+        }
+        if (this.currentText) {
+          sendToClient({
+            type: "text_delta",
+            taskId: this.currentTaskId,
+            content: this.currentText,
+          });
+        }
+      }
     };
 
-    // Send session info when socket opens
-    if (socket.readyState === WebSocket.OPEN) {
-      sendToClient({ type: "ping" as any });
-      setTimeout(() => sendSessionInfo(), 100);
-    } else {
-      socket.onopen = () => {
-        sendToClient({ type: "ping" as any });
-        setTimeout(() => sendSessionInfo(), 100);
-      };
-    }
+    setTimeout(() => sendSessionInfo(), CONFIG.SESSION_INFO_DELAY_MS);
 
     socket.onmessage = async (event) => {
       try {
         const message: ClientMessage = JSON.parse(event.data);
 
-        // Handle ping messages for heartbeat
         if (message.type === "ping") {
-          sendToClient({ type: "pong" as any });
+          conn.lastClientPing = Date.now();
+          sendToClient({ type: "pong" });
           return;
         }
 
         if (message.type === "stop_task") {
-          if (this.agent.isRunning()) {
-            this.agent.requestStop();
-            this.broadcast({
-              type: "system",
-              content: "Stopping task...",
-              level: "info",
-            });
+          if (this.isRunning()) {
+            this.requestStop();
+            this.broadcast({ type: "system", content: "Stopping task...", level: "info" });
           } else {
-            sendToClient({
-              type: "system",
-              content: "No task running",
-              level: "info",
-            });
+            sendToClient({ type: "system", content: "No task running", level: "info" });
           }
           return;
         }
 
-        if (message.type === "archive_session" || message.type === "clear_session") {
-          await archiveCurrentSession();
-          await this.globalSession.clear();
-
-          const tokenUsage = this.globalSession.getTokenUsage();
-          const sizeInfo = this.globalSession.getSessionSizeInfo();
-
-          // Send state update
-          this.broadcast({
-            type: "session_info",
-            messageCount: 0,
-            tokenUsage,
-            history: [],
-            contextSize: {
-              estimatedTokens: sizeInfo.estimatedTokens,
-              bytes: sizeInfo.bytes,
-            },
+        if (message.type === "clear_session") {
+          const result = await executeTool("clear", {});
+          this.broadcast({ 
+            type: "system", 
+            content: result.content, 
+            level: result.isError ? "error" : "success" 
           });
+          return;
+        }
 
-          // Send minimal system message
+        if (message.type === "command") {
+          log(`Command: /${message.name}`);
+          const result = await executeTool(message.name, message.args);
+          const cmdTaskId = crypto.randomUUID();
+          
           this.broadcast({
-            type: "system",
-            content: "Session cleared",
-            level: "success",
+            type: "tool_use",
+            taskId: cmdTaskId,
+            toolId: crypto.randomUUID(),
+            toolName: message.name,
+            toolInput: message.args,
+          });
+          this.broadcast({
+            type: "tool_result",
+            taskId: cmdTaskId,
+            toolId: crypto.randomUUID(),
+            toolOutput: result.content,
+            toolError: result.isError,
           });
           return;
         }
 
         if (message.type === "task") {
-          const taskContent = message.content;
-
-          if (this.agent.isRunning()) {
-            sendToClient({
-              type: "system",
-              content: "Task already in progress",
-              level: "error",
-            });
+          if (this.isRunning()) {
+            sendToClient({ type: "system", content: "Task already in progress", level: "error" });
             return;
           }
 
-          log(`New task: ${taskContent}`);
+          log(`New task: ${message.content}`);
+          
+          this.currentTaskId = crypto.randomUUID();
+          
+          const userTurn = createTurn("user", message.content, this.currentTaskId);
+          this.globalSession.addTurn(userTurn);
+          
+          this.broadcast({ type: "task_start", taskId: this.currentTaskId });
 
-          // Add user message
-          this.globalSession.addMessage({
-            role: "user",
-            content: taskContent,
-          });
-
-          this.broadcast({ type: "user_message", content: taskContent });
-
-          // Execute agent (non-blocking)
-          this.agent.execute(async (shouldStop) => {
-            const history = this.globalSession.getMessages();
-
-            for await (const chunk of continueConversation(
-              taskContent,
-              history,
-              this.globalSession,
-              shouldStop,
-              undefined,
-              true // resumeMode: true because message is already in history
-            )) {
-              this.handleAgentEvent(chunk);
+          this.execute(async (shouldStop) => {
+            const claudeMessages = this.globalSession.getClaudeMessages();
+            for await (const event of continueConversation(claudeMessages, shouldStop)) {
+              this.handleStreamEvent(event);
             }
-          }).catch(err => {
+          }).catch((err: Error) => {
             error("Task error:", err);
-            this.broadcast({
-              type: "system",
-              content: `Error: ${err.message}`,
-              level: "error",
-            });
+            this.broadcast({ type: "system", content: `Error: ${err.message}`, level: "error" });
+            this.currentTaskId = null;
           });
-
-          return;
         }
-      } catch (error) {
+      } catch (err) {
         this.broadcast({
           type: "system",
-          content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+          content: `Error: ${err instanceof Error ? err.message : String(err)}`,
           level: "error",
         });
       }
     };
 
-    socket.onclose = (event) => {
-      log(`Client ${clientId} disconnected (${event.code})`);
-      this.connectedClients.delete(socket);
+    socket.onclose = () => {
+      log(`Client ${clientId} disconnected`);
+      this.removeClient(socket);
     };
 
-    socket.onerror = (err) => {
-      error(`Client ${clientId} error:`, err);
-      this.connectedClients.delete(socket);
+    socket.onerror = () => {
+      this.removeClient(socket);
     };
+
+    return true;
   }
 
-  /**
-   * Get number of connected clients
-   */
   getClientCount(): number {
     return this.connectedClients.size;
   }

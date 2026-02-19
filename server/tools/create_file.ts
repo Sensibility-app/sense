@@ -14,12 +14,11 @@ export const { definition, permissions, executor } = createTool(
     name: "create_file",
     description: "Create a new file in the project directory (fails if file already exists). Automatically creates parent directories if needed.",
     input_schema: {
-      $schema: "http://json-schema.org/draft-07/schema#",
       type: "object",
       properties: {
         file_path: {
           type: "string",
-          description: "Absolute path to new file within project (e.g., '/server/tools/new_tool.ts')"
+          description: "Path to new file relative to project root (e.g., 'server/tools/new_tool.ts')"
         },
         file_contents: {
           type: "string",
@@ -27,19 +26,17 @@ export const { definition, permissions, executor } = createTool(
         },
       },
       required: ["file_path", "file_contents"],
-      additionalProperties: false,
     },
   },
   PERMISSIONS.WRITE_ONLY,
   async (input): Promise<ToolResult> => {
-    // Sanitize path to prevent traversal attacks
     const path = sanitizePath(input.file_path as string);
 
     // Check if file already exists
     try {
       await Deno.stat(path);
       return {
-        content: `File ${input.file_path} already exists. Use edit_file_range or edit_file to modify existing files.`,
+        content: `File ${input.file_path} already exists. Use edit_file to modify existing files.`,
         isError: true,
       };
     } catch {

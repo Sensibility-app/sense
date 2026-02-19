@@ -9,17 +9,13 @@ import { walk } from "jsr:@std/fs@^1.0.0";
 import { relative } from "jsr:@std/path@^1.0.0";
 import { createTool, PERMISSIONS, ToolResult, isBinaryFile, SKIP_DIRECTORY_PATTERNS } from "../tools/_shared/tool-utils.ts";
 import { getBaseDir, resolveSearchPath } from "../tools/_shared/sanitize.ts";
-
-// Search result limits to prevent context explosion
-const SEARCH_RESULT_LIMIT = 100; // Maximum search results to return
-const SEARCH_CONTENT_LIMIT = 5000; // Maximum search content characters
+import { CONFIG } from "../config.ts";
 
 export const { definition, permissions, executor } = createTool(
   {
     name: "search_files",
     description: "Search for a text pattern in files. Returns matching lines with file paths and line numbers. Supports both literal strings and regex patterns. Useful for finding where code, text, or patterns appear in the codebase.",
     input_schema: {
-      $schema: "http://json-schema.org/draft-07/schema#",
       type: "object",
       properties: {
         pattern: {
@@ -28,12 +24,10 @@ export const { definition, permissions, executor } = createTool(
         },
         search_path: {
           type: "string",
-          description: "Path to search within project, relative to project root (e.g., 'server', 'client', or '/' for entire project)",
-          default: "/"
+          description: "Path to search within project, relative to project root (e.g., 'server', 'client', or omit for entire project)"
         },
       },
       required: ["pattern"],
-      additionalProperties: false,
     },
   },
   PERMISSIONS.READ_ONLY,
@@ -76,20 +70,19 @@ export const { definition, permissions, executor } = createTool(
             totalMatches++;
 
             // Stop if we've hit the result limit
-            if (totalMatches > SEARCH_RESULT_LIMIT) {
-              matches.push(`\n... [${totalMatches - SEARCH_RESULT_LIMIT} more matches truncated]`);
+            if (totalMatches > CONFIG.SEARCH_RESULT_LIMIT) {
+              matches.push(`\n... [${totalMatches - CONFIG.SEARCH_RESULT_LIMIT} more matches truncated]`);
               break;
             }
 
-            // Format like grep: filename:linenumber:line
-            const relativePath = "/" + relative(baseDir, entry.path);
+            const relativePath = relative(baseDir, entry.path);
             const match = `${relativePath}:${i + 1}:${lines[i]}`;
 
             outputSize += match.length + 1; // +1 for newline
 
             // Stop if output is too large
-            if (outputSize > SEARCH_CONTENT_LIMIT) {
-              matches.push(`\n... [output truncated at ${SEARCH_CONTENT_LIMIT} characters]`);
+            if (outputSize > CONFIG.SEARCH_CONTENT_LIMIT) {
+              matches.push(`\n... [output truncated at ${CONFIG.SEARCH_CONTENT_LIMIT} characters]`);
               break;
             }
 
@@ -98,7 +91,7 @@ export const { definition, permissions, executor } = createTool(
         }
 
         // Break outer loop if limits reached
-        if (totalMatches > SEARCH_RESULT_LIMIT || outputSize > SEARCH_CONTENT_LIMIT) {
+        if (totalMatches > CONFIG.SEARCH_RESULT_LIMIT || outputSize > CONFIG.SEARCH_CONTENT_LIMIT) {
           break;
         }
       } catch {

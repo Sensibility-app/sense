@@ -36,7 +36,6 @@ export const { definition, permissions, executor } = createTool(
     name: "glob",
     description: "Find files matching glob patterns. Supports *.ts, **/*.js, etc. Returns paths sorted by modification time. Respects .gitignore by default.",
     input_schema: {
-      $schema: "http://json-schema.org/draft-07/schema#",
       type: "object",
       properties: {
         pattern: {
@@ -45,7 +44,7 @@ export const { definition, permissions, executor } = createTool(
         },
         path: {
           type: "string",
-          description: "Optional: Base directory to search from (default: project root '/'. Example: '/server')"
+          description: "Optional: Base directory to search from (default: project root). Example: 'server'"
         },
         include_gitignored: {
           type: "boolean",
@@ -53,7 +52,6 @@ export const { definition, permissions, executor } = createTool(
         },
       },
       required: ["pattern"],
-      additionalProperties: false,
     },
   },
   PERMISSIONS.READ_ONLY,
@@ -81,7 +79,7 @@ export const { definition, permissions, executor } = createTool(
       }
 
       matches.push({
-        path: "/" + relativePath,
+        path: relativePath,
         mtime: stat.mtime?.getTime() || 0,
       });
     }

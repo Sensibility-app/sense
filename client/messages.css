@@ -1,0 +1,126 @@
+.message {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
+}
+
+.message.user {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  max-width: 80%;
+  margin-left: auto;
+  margin-right: 0;
+  border-radius: 18px 18px 4px 18px;
+}
+
+.message.assistant {
+  background: transparent;
+  padding: 8px 0;
+}
+
+.message.system {
+  background: transparent;
+  border-left: 3px solid var(--border-color);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+.message.error {
+  background: var(--error-bg);
+  border: 1px solid var(--error-color);
+  color: var(--error-color);
+}
+
+.message.tool {
+  padding: 0;
+}
+
+.message.tool details {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.message.tool summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-family: 'SF Mono', Monaco, monospace;
+  list-style: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.message.tool summary::-webkit-details-marker {
+  display: none;
+}
+
+.message.tool details[open] summary {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.message.tool .tool-content {
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.message.tool .tool-content pre {
+  background: var(--bg-primary);
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 8px 0;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+}
+
+.message.tool.error details {
+  border-color: var(--error-color);
+}
+
+.message.tool.error summary {
+  color: var(--error-color);
+}
+
+.message.thinking {
+  padding: 0;
+}
+
+.message.thinking details {
+  background: transparent;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.message.thinking summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  list-style: none;
+}
+
+.message.thinking summary::-webkit-details-marker {
+  display: none;
+}
+
+.message.thinking details[open] summary {
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.message.thinking .thinking-content {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  font-family: inherit;
+  line-height: 1.5;
+}

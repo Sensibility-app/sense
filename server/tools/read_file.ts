@@ -7,21 +7,18 @@
 
 import { createTool, PERMISSIONS, ToolResult } from "../tools/_shared/tool-utils.ts";
 import { sanitizePath } from "../tools/_shared/sanitize.ts";
-
-// Maximum characters to read from a file to prevent context explosion
-const MAX_FILE_SIZE_CHARS = 10000;
+import { CONFIG } from "../config.ts";
 
 export const { definition, permissions, executor } = createTool(
   {
     name: "read_file",
     description: "Read file contents from the project directory",
     input_schema: {
-      $schema: "http://json-schema.org/draft-07/schema#",
       type: "object",
       properties: {
         file_path: {
           type: "string",
-          description: "Absolute path to file within project (e.g., '/server/main.ts', '/client/index.html')"
+          description: "Path to file relative to project root (e.g., 'server/main.ts', 'client/index.html')"
         },
         offset: {
           type: "number",
@@ -33,12 +30,10 @@ export const { definition, permissions, executor } = createTool(
         },
       },
       required: ["file_path"],
-      additionalProperties: false,
     },
   },
   PERMISSIONS.READ_ONLY,
   async (input): Promise<ToolResult> => {
-    // Sanitize path to prevent traversal attacks
     const path = sanitizePath(input.file_path as string);
 
     // Read file content
@@ -61,9 +56,9 @@ export const { definition, permissions, executor } = createTool(
     }
 
     // Limit file size to prevent context explosion
-    if (content.length > MAX_FILE_SIZE_CHARS) {
-      content = content.slice(0, MAX_FILE_SIZE_CHARS) +
-        `\n\n... [file truncated at ${MAX_FILE_SIZE_CHARS} characters, total size: ${content.length} chars]`;
+    if (content.length > CONFIG.MAX_FILE_SIZE) {
+      content = content.slice(0, CONFIG.MAX_FILE_SIZE) +
+        `\n\n... [file truncated at ${CONFIG.MAX_FILE_SIZE} characters, total size: ${content.length} chars]`;
     }
 
     return { content, isError: false };

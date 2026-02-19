@@ -6,13 +6,13 @@
  */
 
 import { createTool, PERMISSIONS, ToolResult } from "../tools/_shared/tool-utils.ts";
+import { CONFIG } from "../config.ts";
 
 export const { definition, permissions, executor } = createTool(
   {
     name: "eval",
     description: "Execute TypeScript/JavaScript code with access to Deno APIs (Deno.readDir, Deno.readTextFile, etc.). Code runs with server's permission context.",
     input_schema: {
-      $schema: "http://json-schema.org/draft-07/schema#",
       type: "object",
       properties: {
         code: {
@@ -21,7 +21,6 @@ export const { definition, permissions, executor } = createTool(
         },
       },
       required: ["code"],
-      additionalProperties: false,
     },
   },
   PERMISSIONS.EXECUTE,
@@ -33,12 +32,10 @@ export const { definition, permissions, executor } = createTool(
       })();
     `);
 
-    // Execute with timeout (10 seconds)
-    const timeoutMs = 10000;
     const result = await Promise.race([
       asyncFn(Deno),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Execution timeout (10s)")), timeoutMs)
+        setTimeout(() => reject(new Error(`Execution timeout (${CONFIG.EVAL_TIMEOUT_MS}ms)`)), CONFIG.EVAL_TIMEOUT_MS)
       ),
     ]);
 

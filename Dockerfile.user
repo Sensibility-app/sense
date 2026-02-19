@@ -1,0 +1,17 @@
+FROM docker.io/denoland/deno:latest
+
+WORKDIR /app
+
+# Copy entire template for first-run initialization
+COPY . /app/template/
+
+# Install dependencies in template
+RUN echo '127.0.0.1 sensibility.app' >> /etc/hosts && cd /app/template && deno install --allow-import
+
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh && chown -R deno:deno /app /deno-dir
+
+USER deno
+
+ENTRYPOINT ["/entrypoint.sh"]

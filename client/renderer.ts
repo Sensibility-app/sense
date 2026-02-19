@@ -1,442 +1,246 @@
-/**
- * UI Rendering Module
- *
- * Handles all DOM manipulation and rendering logic.
- * Encapsulates message rendering, UI state updates, and output management.
- */
+const MARKDOWN_DEBOUNCE_MS = 50;
 
-import { state } from "./state.ts";
-
-// =============================================================================
-// STATUS CONFIGURATION
-// =============================================================================
-
-const STATUS_CONFIG: Record<
-  string,
-  { text: string | (() => string); add: string; remove: string[] }
-> = {
-  connected: {
-    text: "Connected",
-    add: "connected",
-    remove: ["error", "reconnecting"],
-  },
-  connecting: {
-    text: "Connecting...",
-    add: "reconnecting",
-    remove: ["connected", "error"],
-  },
-  disconnected: {
-    text: () =>
-      state.connection.reconnectAttempts > 0
-        ? "Reconnecting..."
-        : "Disconnected",
-    add: "reconnecting",
-    remove: ["connected"],
-  },
-  error: {
-    text: "Connection Error",
-    add: "error",
-    remove: ["connected", "reconnecting"],
-  },
-  failed: {
-    text: "Connection Failed",
-    add: "error",
-    remove: ["connected", "reconnecting"],
-  },
-};
-
-// =============================================================================
-// RENDERER CLASS
-// =============================================================================
+type RenderBlock =
+  | { type: "user"; content: string }
+  | { type: "thinking"; content: string }
+  | { type: "text"; content: string }
+  | { type: "tool_use"; id: string; name: string; input: unknown }
+  | { type: "tool_result"; tool_use_id: string; content: string; is_error: boolean }
+  | { type: "system"; content: string; level: string };
 
 export class Renderer {
+  private markdownTimer: number | null = null;
+  private pendingMarkdown: { element: HTMLElement; text: string } | null = null;
+
   constructor(
     private output: HTMLElement,
-    private statusElement: HTMLElement,
-    private tokenInfo: HTMLElement,
-    private taskInput: HTMLTextAreaElement,
     private submitBtn: HTMLElement,
     private stopBtn: HTMLElement
   ) {
-    // Configure marked when it becomes available (loaded async)
-    if ((window as any).marked) {
-      this.configureMarked();
-    } else {
-      // Wait for marked to load
-      window.addEventListener('DOMContentLoaded', () => {
-        if ((window as any).marked) {
-          this.configureMarked();
-        }
-      });
-    }
+    this.configureMarked();
   }
 
-  /**
-   * Configure marked options for security and better rendering
-   */
   private configureMarked(): void {
-    try {
-      (window as any).marked.setOptions({
-        breaks: true,
-        gfm: true,
-        headerIds: false,
-        mangle: false
-      });
-    } catch (e) {
-      console.error("Failed to configure marked:", e);
-    }
-  }
-
-  // ===========================================================================
-  // UTILITY METHODS
-  // ===========================================================================
-
-  /**
-   * Check if user is near the bottom of the output
-   */
-  private isNearBottom(): boolean {
-    if (!this.output) return false;
-    const threshold = 150; // pixels from bottom
-    const position = this.output.scrollTop + this.output.clientHeight;
-    const bottom = this.output.scrollHeight;
-    return bottom - position < threshold;
-  }
-
-  /**
-   * Scroll output to bottom with smooth animation (only if user is already near bottom)
-   */
-  scrollToBottom(): void {
-    if (this.output && this.isNearBottom()) {
-      this.output.scrollTo({
-        top: this.output.scrollHeight,
-        behavior: 'smooth'
-      });
-    }
-  }
-
-  /**
-   * Clear output
-   */
-  clearOutput(): void {
-    this.output.innerHTML = "";
-  }
-
-  /**
-   * Parse markdown and render to HTML element with error handling
-   */
-  private parseMarkdown(text: string, element: HTMLElement): void {
-    try {
-      element.innerHTML = (window as any).marked.parse(text);
-    } catch (e) {
-      console.error("Markdown parse error:", e);
-      element.textContent = text;
-    }
-  }
-
-  // ===========================================================================
-  // MESSAGE RENDERING
-  // ===========================================================================
-
-  /**
-   * Create message element (base renderer for all message types)
-   */
-  private createMessage(
-    type: "user" | "assistant" | "system",
-    content: string,
-    options: {
-      level?: "info" | "error" | "success";
-      parseMarkdown?: boolean;
-    } = {}
-  ): HTMLElement {
-    const message = document.createElement("div");
-    message.className = `message ${type}`;
-
-    if (type === "system" && options.level === "error") {
-      message.classList.add("error");
-    }
-
-    const messageContent = document.createElement("div");
-    messageContent.className = "message-content";
-
-    if (options.parseMarkdown) {
-      this.parseMarkdown(content, messageContent);
-    } else {
-      messageContent.textContent = content;
-    }
-
-    message.appendChild(messageContent);
-    return message;
-  }
-
-  /**
-   * Add message to output (unified function)
-   */
-  private addMessage(
-    type: "user" | "assistant" | "system",
-    content: string,
-    options = {}
-  ): void {
-    const message = this.createMessage(type, content, options);
-    this.output.appendChild(message);
-    this.scrollToBottom();
-  }
-
-  /**
-   * Add user message to output
-   */
-  addUserMessage(content: string): void {
-    this.addMessage("user", content, { parseMarkdown: true });
-  }
-
-  /**
-   * Add assistant message to output (for history)
-   */
-  addAssistantMessage(content: string): void {
-    this.addMessage("assistant", content, { parseMarkdown: true });
-  }
-
-  /**
-   * Add system message to output
-   */
-  addSystemMessage(content: string, level: string = "info"): void {
-    this.addMessage("system", content, { level });
-  }
-
-  /**
-   * Start streaming assistant message
-   */
-  startAssistantMessage(): void {
-    // Finish any existing message first
-    this.finishAssistantMessage();
-
-    state.render.currentAssistantMessage = document.createElement("div");
-    state.render.currentAssistantMessage.className = "message assistant";
-    state.render.currentAssistantText = "";
-
-    const messageContent = document.createElement("div");
-    messageContent.className = "message-content streaming-cursor";
-    messageContent.textContent = "";
-
-    state.render.currentAssistantMessage.appendChild(messageContent);
-    this.output.appendChild(state.render.currentAssistantMessage);
-    this.scrollToBottom();
-  }
-
-  /**
-   * Append text to streaming assistant message
-   */
-  appendToAssistantMessage(text: string): void {
-    if (!state.render.currentAssistantMessage) {
-      this.startAssistantMessage();
-    }
-
-    state.render.currentAssistantText += text;
-    const content = state.render.currentAssistantMessage!.querySelector(
-      ".message-content"
-    ) as HTMLElement;
-
-    // Try to render markdown in real-time (falls back to text if incomplete)
-    this.parseMarkdown(state.render.currentAssistantText, content);
-
-    // Only scroll if user is following along
-    this.scrollToBottom();
-  }
-
-  /**
-   * Finish streaming assistant message
-   */
-  finishAssistantMessage(): void {
-    if (state.render.currentAssistantMessage) {
-      const content = state.render.currentAssistantMessage.querySelector(
-        ".message-content"
-      ) as HTMLElement;
-      content.classList.remove("streaming-cursor");
-
-      // Final markdown parse
-      if (state.render.currentAssistantText.trim()) {
-        this.parseMarkdown(state.render.currentAssistantText, content);
-      }
-
-      state.render.currentAssistantMessage = null;
-      state.render.currentAssistantText = "";
-    }
-  }
-
-  /**
-   * Start streaming thinking block
-   */
-  startThinkingBlock(): void {
-    // Finish any existing thinking block first
-    this.finishThinkingBlock();
-
-    state.render.currentThinkingBlock = document.createElement("div");
-    state.render.currentThinkingBlock.className = "thinking-block";
-    state.render.currentThinkingText = "";
-
-    const header = document.createElement("div");
-    header.className = "thinking-header";
-    header.innerHTML = '<span>💭 Thinking</span><span>▼</span>';
-
-    const thinkingContent = document.createElement("div");
-    thinkingContent.className = "thinking-content";
-    thinkingContent.textContent = "";
-
-    // Make header collapsible
-    header.onclick = () => {
-      thinkingContent.classList.toggle("collapsed");
-      const arrow = header.querySelector("span:last-child");
-      arrow!.textContent = thinkingContent.classList.contains("collapsed")
-        ? "▶"
-        : "▼";
+    const configure = () => {
+      try {
+        (window as unknown as { marked: { setOptions: (opts: object) => void } }).marked.setOptions({
+          breaks: true,
+          gfm: true,
+          headerIds: false,
+          mangle: false
+        });
+      } catch {}
     };
-
-    state.render.currentThinkingBlock.appendChild(header);
-    state.render.currentThinkingBlock.appendChild(thinkingContent);
-    this.output.appendChild(state.render.currentThinkingBlock);
-    this.scrollToBottom();
-  }
-
-  /**
-   * Append text to streaming thinking block
-   */
-  appendToThinkingBlock(text: string): void {
-    if (!state.render.currentThinkingBlock) {
-      this.startThinkingBlock();
-    }
-
-    state.render.currentThinkingText += text;
-    const content = state.render.currentThinkingBlock!.querySelector(
-      ".thinking-content"
-    ) as HTMLElement;
-
-    content.textContent = state.render.currentThinkingText;
-    this.scrollToBottom();
-  }
-
-  /**
-   * Finish streaming thinking block
-   */
-  finishThinkingBlock(): void {
-    if (state.render.currentThinkingBlock) {
-      state.render.currentThinkingBlock = null;
-      state.render.currentThinkingText = "";
+    if ((window as unknown as { marked?: unknown }).marked) {
+      configure();
+    } else {
+      window.addEventListener("DOMContentLoaded", configure);
     }
   }
 
-  /**
-   * Add tool execution indicator (shown while tool runs)
-   */
-  addToolExecuting(toolName: string, toolId: string): void {
-    const indicator = document.createElement("div");
-    indicator.className = "tool-executing";
-    indicator.id = `tool-${toolId}`;
-    indicator.innerHTML = `
-      <span class="tool-icon">⚙</span>
-      <span class="tool-label">${toolName}</span>
-      <span class="spinner"></span>
-    `;
-    this.output.appendChild(indicator);
-    this.scrollToBottom();
-  }
-
-  /**
-   * Remove tool execution indicator (when complete)
-   */
-  removeToolExecuting(toolId: string): void {
-    const indicator = document.getElementById(`tool-${toolId}`);
-    if (indicator) {
-      indicator.remove();
+  private parseMarkdown(text: string): string {
+    try {
+      return (window as unknown as { marked: { parse: (t: string) => string } }).marked.parse(text);
+    } catch {
+      return text;
     }
   }
 
-  // ===========================================================================
-  // UI STATE UPDATES
-  // ===========================================================================
+  private lastElement(): Element | null {
+    return this.output.lastElementChild;
+  }
 
-  /**
-   * Set processing state and update UI
-   */
+  clear(): void {
+    this.output.innerHTML = "";
+    this.flushMarkdown();
+  }
+
+  addBlock(block: RenderBlock): void {
+    switch (block.type) {
+      case "user":
+        this.createUserBlock(block.content);
+        break;
+
+      case "thinking": {
+        const last = this.lastElement();
+        if (last?.classList.contains("thinking")) {
+          const content = last.querySelector(".thinking-content") as HTMLElement;
+          content.textContent += block.content;
+        } else {
+          this.createThinkingBlock(block.content);
+        }
+        break;
+      }
+
+      case "text": {
+        const last = this.lastElement();
+        if (last?.classList.contains("assistant")) {
+          const content = last.querySelector(".message-content") as HTMLElement;
+          const currentText = content.dataset.rawText || "";
+          const newText = currentText + block.content;
+          content.dataset.rawText = newText;
+          this.scheduleMarkdown(content, newText);
+        } else {
+          this.createTextBlock(block.content);
+        }
+        break;
+      }
+
+      case "tool_use":
+        this.createToolUseBlock(block.id, block.name, block.input);
+        break;
+
+      case "tool_result": {
+        const toolEl = this.output.querySelector(`[data-tool-id="${block.tool_use_id}"]`) as HTMLElement;
+        if (toolEl) {
+          if (block.is_error) {
+            toolEl.classList.add("error");
+          }
+          const content = toolEl.querySelector(".tool-content") as HTMLElement;
+          const outputPre = document.createElement("pre");
+          outputPre.className = "tool-output";
+          outputPre.textContent = block.content;
+          content.appendChild(outputPre);
+        }
+        break;
+      }
+
+      case "system":
+        this.createSystemBlock(block.content, block.level);
+        break;
+    }
+  }
+
+  private createUserBlock(content: string): void {
+    const el = document.createElement("div");
+    el.className = "message user";
+    const inner = document.createElement("div");
+    inner.className = "message-content";
+    inner.innerHTML = this.parseMarkdown(content);
+    el.appendChild(inner);
+    this.output.appendChild(el);
+  }
+
+  private createThinkingBlock(content: string): void {
+    const el = document.createElement("div");
+    el.className = "message thinking";
+
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "Thinking";
+    details.appendChild(summary);
+
+    const inner = document.createElement("div");
+    inner.className = "thinking-content";
+    inner.textContent = content;
+    details.appendChild(inner);
+
+    el.appendChild(details);
+    this.output.appendChild(el);
+  }
+
+  private createTextBlock(content: string): void {
+    const el = document.createElement("div");
+    el.className = "message assistant";
+
+    const inner = document.createElement("div");
+    inner.className = "message-content";
+    inner.dataset.rawText = content;
+    inner.innerHTML = this.parseMarkdown(content);
+
+    el.appendChild(inner);
+    this.output.appendChild(el);
+  }
+
+  private createToolUseBlock(id: string, name: string, input: unknown): void {
+    const el = document.createElement("div");
+    el.className = "message tool";
+    el.dataset.toolId = id;
+
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = name;
+    details.appendChild(summary);
+
+    const content = document.createElement("div");
+    content.className = "tool-content";
+
+    const inputPre = document.createElement("pre");
+    inputPre.textContent = typeof input === "string" ? input : JSON.stringify(input, null, 2);
+    content.appendChild(inputPre);
+
+    details.appendChild(content);
+    el.appendChild(details);
+    this.output.appendChild(el);
+  }
+
+  private createSystemBlock(content: string, level: string): void {
+    const el = document.createElement("div");
+    el.className = `message system${level === "error" ? " error" : ""}`;
+    const inner = document.createElement("div");
+    inner.className = "message-content";
+    inner.textContent = content;
+    el.appendChild(inner);
+    this.output.appendChild(el);
+  }
+
+  private scheduleMarkdown(element: HTMLElement, text: string): void {
+    this.pendingMarkdown = { element, text };
+    if (this.markdownTimer !== null) {
+      clearTimeout(this.markdownTimer);
+    }
+    this.markdownTimer = setTimeout(() => {
+      this.flushMarkdown();
+    }, MARKDOWN_DEBOUNCE_MS);
+  }
+
+  private flushMarkdown(): void {
+    if (this.markdownTimer !== null) {
+      clearTimeout(this.markdownTimer);
+      this.markdownTimer = null;
+    }
+    if (this.pendingMarkdown) {
+      this.pendingMarkdown.element.innerHTML = this.parseMarkdown(this.pendingMarkdown.text);
+      this.pendingMarkdown = null;
+    }
+  }
+
+  finishTask(): void {
+    this.flushMarkdown();
+    this.setProcessing(false);
+  }
+
   setProcessing(processing: boolean): void {
-    state.isProcessing = processing;
-
-    // Don't allow processing if not connected
-    if (processing && state.connection.status !== "connected") {
-      state.isProcessing = false;
-      processing = false;
-    }
-
-    if (processing) {
-      this.submitBtn.style.display = "none";
-      this.stopBtn.style.display = "flex";
-      // Don't disable textarea - let users type next message
-      // Add visual class to input wrapper instead
-      const wrapper = this.taskInput.parentElement;
-      if (wrapper) {
-        wrapper.classList.add("processing");
-      }
-    } else {
-      this.submitBtn.style.display = "flex";
-      this.stopBtn.style.display = "none";
-      const wrapper = this.taskInput.parentElement;
-      if (wrapper) {
-        wrapper.classList.remove("processing");
-      }
-      this.taskInput.focus();
-    }
+    this.submitBtn.style.display = processing ? "none" : "flex";
+    this.stopBtn.style.display = processing ? "flex" : "none";
   }
 
-  /**
-   * Update connection status in header
-   */
-  updateConnectionStatus(status: string): void {
-    if (!this.statusElement) {
-      console.error("Status element not initialized");
-      return;
-    }
-
-    const config = STATUS_CONFIG[status];
-    if (!config) return;
-
-    this.statusElement.textContent =
-      typeof config.text === "function" ? config.text() : config.text;
-    this.statusElement.classList.add(config.add);
-    this.statusElement.classList.remove(...config.remove);
+  saveScrollPosition(): void {
+    sessionStorage.setItem("scrollPosition", String(window.scrollY || document.documentElement.scrollTop));
+    
+    const openDetails: number[] = [];
+    this.output.querySelectorAll("details").forEach((el, i) => {
+      if (el.open) openDetails.push(i);
+    });
+    sessionStorage.setItem("openDetails", JSON.stringify(openDetails));
   }
 
-  /**
-   * Update token info display with simplified formatting
-   */
-  updateTokenInfo(input: string | { estimatedTokens: number }): void {
-    if (typeof input === "string") {
-      // Pre-formatted string from token_usage message - parse and simplify
-      const match = input.match(/~?([\d,]+)/);
-      if (match) {
-        const tokens = parseInt(match[1].replace(/,/g, ""));
-        this.tokenInfo.textContent = this.formatTokenCount(tokens);
-        this.tokenInfo.style.display = "block";
-      }
-    } else if (input && typeof input.estimatedTokens === "number") {
-      // Context size object from session info
-      if (input.estimatedTokens > 0) {
-        this.tokenInfo.textContent = this.formatTokenCount(input.estimatedTokens);
-        this.tokenInfo.style.display = "block";
-      } else {
-        this.tokenInfo.style.display = "none";
-      }
+  restoreScrollPosition(): void {
+    const openDetails = sessionStorage.getItem("openDetails");
+    if (openDetails) {
+      const indices = JSON.parse(openDetails) as number[];
+      this.output.querySelectorAll("details").forEach((el, i) => {
+        if (indices.includes(i)) el.open = true;
+      });
+      sessionStorage.removeItem("openDetails");
     }
-  }
 
-  /**
-   * Format token count with K abbreviation for readability
-   * Examples: 1234 -> "1.2K", 45678 -> "46K", 123 -> "123"
-   */
-  private formatTokenCount(tokens: number): string {
-    if (tokens >= 10000) {
-      return `~${Math.round(tokens / 1000)}K`;
-    } else if (tokens >= 1000) {
-      return `~${(tokens / 1000).toFixed(1)}K`;
-    } else {
-      return `~${tokens}`;
+    const scrollPos = sessionStorage.getItem("scrollPosition");
+    if (scrollPos !== null) {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: Number(scrollPos) });
+        sessionStorage.removeItem("scrollPosition");
+      });
     }
   }
 }

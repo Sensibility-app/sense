@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "start": "deno run --allow-all server/main.ts"
+    "start": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run --allow-ffi --allow-sys --allow-import server/main.ts"
   },
   "imports": {
     "llm": "https://sensibility.app/sdk.ts"
