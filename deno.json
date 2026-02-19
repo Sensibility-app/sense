@@ -1,13 +1,12 @@
 {
   "tasks": {
-    "start": "deno run --allow-all scripts/dev-with-validation.ts",
-    "start:fast": "deno run --allow-all --watch server/main.ts",
-    "test": "deno test --allow-all"
+    "start": "deno run --allow-all server/main.ts"
   },
   "imports": {
-    "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@^0.32.0"
+    "llm": "./server/llm.ts"
   },
   "compilerOptions": {
-    "lib": ["deno.window", "dom"]
+    "lib": ["deno.window", "dom"],
+    "strict": true
   }
 }
