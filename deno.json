@@ -3,7 +3,7 @@
     "start": "deno run --allow-all server/main.ts"
   },
   "imports": {
-    "llm": "./server/llm.ts"
+    "llm": "https://sensibility.app/sdk.ts"
   },
   "compilerOptions": {
     "lib": ["deno.window", "dom"],

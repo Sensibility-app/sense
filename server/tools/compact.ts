@@ -1,4 +1,4 @@
-import { createClient, type TextBlock } from "../llm.ts";
+import { createClient, type Message, type ResponseContentBlock, type TextBlock } from "llm";
 import { createTool, PERMISSIONS, ToolResult } from "./_shared/tool-utils.ts";
 import { getToolContext } from "../tools-loader.ts";
 import { log } from "../logger.ts";
@@ -82,19 +82,20 @@ export const { definition, permissions, executor } = createTool(
 
     const client = createClient();
 
-    const response = await client.messages.create({
+    const response: Message = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 2048,
+      stream: false,
       messages: [{
         role: "user",
         content: COMPACT_PROMPT + formattedHistory
-      }]
+      }],
     });
 
-    const summary = response.content
-      .filter((block): block is TextBlock => block.type === "text")
-      .map(block => block.text)
-      .join("\n");
+    const textBlocks = response.content.filter(
+      (block: ResponseContentBlock): block is TextBlock => block.type === "text",
+    );
+    const summary = textBlocks.map((b: TextBlock) => b.text).join("\n");
 
     if (!summary) {
       return {

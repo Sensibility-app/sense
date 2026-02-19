@@ -9,7 +9,7 @@ import {
   type LLMClient,
   type StreamEvent as LLMStreamEvent,
   type MessageCreateParams,
-} from "./llm.ts";
+} from "llm";
 
 let cachedTools: ToolDefinition[] | null = null;
 let cachedSystemPrompt: string | null = null;
