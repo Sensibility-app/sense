@@ -14,8 +14,6 @@ export const PATHS = {
 export const CONFIG = {
   PORT: parseInt(Deno.env.get("PORT") || "8080"),
   CLAUDE_MODEL: Deno.env.get("CLAUDE_MODEL") || "claude-sonnet-4-5-20250929",
-  ANTHROPIC_API_KEY: Deno.env.get("ANTHROPIC_API_KEY"),
-  LLM_PROXY_URL: Deno.env.get("LLM_PROXY_URL"),
   MAX_ITERATIONS: 25,
   MAX_TOKENS: 16000,
   MAX_FILE_SIZE: 10000,
