@@ -20,7 +20,8 @@ export class Connection {
     }
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    this.ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+    const base = window.location.pathname.replace(/\/$/, "");
+    this.ws = new WebSocket(`${protocol}//${window.location.host}${base}/ws`);
 
     this.ws.onopen = () => {
       this.statusEl.className = "status connected";
