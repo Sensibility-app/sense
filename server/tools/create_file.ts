@@ -6,10 +6,10 @@
  */
 
 import { dirname } from "jsr:@std/path@^1.0.0";
-import { createTool, PERMISSIONS, ToolResult } from "../tools/_shared/tool-utils.ts";
+import { createTool, type ToolResult } from "../tools/_shared/tool-utils.ts";
 import { sanitizePath } from "../tools/_shared/sanitize.ts";
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "create_file",
     description: "Create a new file in the project directory (fails if file already exists). Automatically creates parent directories if needed.",
@@ -28,7 +28,6 @@ export const { definition, permissions, executor } = createTool(
       required: ["file_path", "file_contents"],
     },
   },
-  PERMISSIONS.WRITE_ONLY,
   async (input): Promise<ToolResult> => {
     const path = sanitizePath(input.file_path as string);
 

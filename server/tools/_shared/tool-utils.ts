@@ -25,24 +25,9 @@ export interface ToolResult {
 
 export type ToolExecutor = (input: Record<string, unknown>) => Promise<ToolResult> | ToolResult;
 
-export interface ToolPermissions {
-  filesystem: ("read" | "write")[];
-  network: boolean;
-  execute: boolean;
-  env?: boolean;
-}
-
-export const PERMISSIONS = {
-  READ_ONLY: { filesystem: ["read"] as ("read" | "write")[], network: false, execute: false },
-  READ_WRITE: { filesystem: ["read", "write"] as ("read" | "write")[], network: false, execute: false },
-  WRITE_ONLY: { filesystem: ["write"] as ("read" | "write")[], network: false, execute: false },
-  EXECUTE: { filesystem: ["read", "write"] as ("read" | "write")[], network: false, execute: true },
-} as const;
-
 export interface ToolModule {
   definition: ToolDefinition;
   executor: ToolExecutor;
-  permissions: ToolPermissions;
 }
 
 export function validateToolModule(module: unknown, filename: string): ToolModule {
@@ -52,9 +37,6 @@ export function validateToolModule(module: unknown, filename: string): ToolModul
   }
   if (!m.executor || typeof m.executor !== "function") {
     throw new Error(`Tool ${filename}: Missing or invalid 'executor' export`);
-  }
-  if (!m.permissions || typeof m.permissions !== "object") {
-    throw new Error(`Tool ${filename}: Missing or invalid 'permissions' export`);
   }
   return m as unknown as ToolModule;
 }
@@ -74,7 +56,6 @@ function validateInput(input: Record<string, unknown>, schema: ToolDefinition["i
 
 export function createTool(
   definition: Omit<ToolDefinition, "input_schema"> & { input_schema: Omit<ToolDefinition["input_schema"], "$schema" | "additionalProperties"> },
-  permissions: ToolPermissions,
   executor: ToolExecutor
 ): ToolModule {
   const fullDefinition: ToolDefinition = {
@@ -97,7 +78,7 @@ export function createTool(
     }
   };
 
-  return { definition: fullDefinition, permissions, executor: wrappedExecutor };
+  return { definition: fullDefinition, executor: wrappedExecutor };
 }
 
 export const BINARY_FILE_EXTENSIONS = [

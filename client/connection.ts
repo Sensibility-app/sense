@@ -1,86 +1,93 @@
 import type { ServerMessage } from "../shared/messages.ts";
 
 const RECONNECT_DELAY = 2000;
-const PING_INTERVAL = 30000;
 
 export class Connection {
-  private ws: WebSocket | null = null;
+  private eventSource: EventSource | null = null;
   private statusEl: HTMLElement;
-  private pingTimer: number | null = null;
+  private base: string;
 
   public onMessage: (message: ServerMessage) => void = () => {};
 
   constructor(statusEl: HTMLElement) {
     this.statusEl = statusEl;
+    this.base = window.location.pathname.replace(/\/$/, "");
   }
 
   connect(): void {
-    if (this.ws?.readyState === WebSocket.CONNECTING || this.ws?.readyState === WebSocket.OPEN) {
-      return;
-    }
+    if (this.eventSource) return;
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const base = window.location.pathname.replace(/\/$/, "");
-    this.ws = new WebSocket(`${protocol}//${window.location.host}${base}/ws`);
+    this.eventSource = new EventSource(`${this.base}/events`);
 
-    this.ws.onopen = () => {
+    this.eventSource.onopen = () => {
       this.statusEl.className = "status connected";
-      this.startPing();
     };
 
-    this.ws.onmessage = (e) => {
+    this.eventSource.onmessage = (e) => {
       try {
-        const msg = JSON.parse(e.data);
-        if (msg.type !== "pong") {
-          this.onMessage(msg);
-        }
-      } catch {}
+        this.onMessage(JSON.parse(e.data) as ServerMessage);
+      } catch { /* malformed event */ }
     };
 
-    this.ws.onclose = () => {
-      this.stopPing();
+    this.eventSource.onerror = () => {
       this.statusEl.className = "status reconnecting";
-      setTimeout(() => this.connect(), RECONNECT_DELAY);
-    };
-
-    this.ws.onerror = () => {
-      this.statusEl.className = "status error";
+      if (this.eventSource?.readyState === EventSource.CLOSED) {
+        this.eventSource = null;
+        setTimeout(() => this.connect(), RECONNECT_DELAY);
+      }
     };
   }
 
   disconnect(): void {
-    this.ws?.close();
+    this.eventSource?.close();
+    this.eventSource = null;
   }
 
-  send(type: string, content?: string): boolean {
-    if (this.ws?.readyState !== WebSocket.OPEN) return false;
-    this.ws.send(JSON.stringify(content ? { type, content } : { type }));
-    return true;
+  async sendTask(content: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.base}/api/task`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
-  sendCommand(name: string, args: Record<string, string>): boolean {
-    if (this.ws?.readyState !== WebSocket.OPEN) return false;
-    this.ws.send(JSON.stringify({ type: "command", name, args }));
-    return true;
+  async sendCommand(name: string, args: Record<string, string>): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.base}/api/command`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, args }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async stopTask(): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.base}/api/stop`, { method: "POST" });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async clearSession(): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.base}/api/clear`, { method: "POST" });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   isConnected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN;
-  }
-
-  private startPing(): void {
-    this.stopPing();
-    this.pingTimer = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ type: "ping" }));
-      }
-    }, PING_INTERVAL);
-  }
-
-  private stopPing(): void {
-    if (this.pingTimer !== null) {
-      clearInterval(this.pingTimer);
-      this.pingTimer = null;
-    }
+    return this.eventSource?.readyState === EventSource.OPEN;
   }
 }

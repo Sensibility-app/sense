@@ -90,13 +90,6 @@ export class PersistentSession {
     return this.turns[this.turns.length - 1];
   }
 
-  updateLastTurn(updater: (turn: Turn) => Turn): void {
-    if (this.turns.length > 0) {
-      this.turns[this.turns.length - 1] = updater(this.turns[this.turns.length - 1]);
-      this.queueSave();
-    }
-  }
-
   private queueSave(): void {
     this.saveQueue = this.saveQueue
       .then(() => this.save())
@@ -109,10 +102,6 @@ export class PersistentSession {
 
   getClaudeMessages(): Array<{ role: "user" | "assistant"; content: string | Block[] }> {
     return this.turns.map(t => ({ role: t.role, content: t.content }));
-  }
-
-  getSessionId(): string {
-    return this.sessionId;
   }
 
   getTurnCount(): number {
@@ -152,17 +141,6 @@ export class PersistentSession {
 
   getTokenUsage() {
     return { ...this.tokenUsage };
-  }
-
-  async delete(): Promise<void> {
-    try {
-      if (await exists(PATHS.CURRENT_SESSION)) {
-        await Deno.remove(PATHS.CURRENT_SESSION);
-        log(`Deleted session`);
-      }
-    } catch (err) {
-      error(`Failed to delete session:`, err);
-    }
   }
 
   async shutdown(): Promise<void> {

@@ -1,8 +1,8 @@
-import { createTool, PERMISSIONS, ToolResult } from "./_shared/tool-utils.ts";
+import { createTool, type ToolResult } from "./_shared/tool-utils.ts";
 import { Readability } from "npm:@mozilla/readability@0.5.0";
 import { JSDOM } from "npm:jsdom@23.0.1";
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "fetch_url",
     description: "Fetch content from a URL. Can retrieve web pages, API responses, or any HTTP-accessible content. Returns the response text.",
@@ -34,16 +34,15 @@ export const { definition, permissions, executor } = createTool(
       required: ["url"],
     },
   },
-  PERMISSIONS.EXECUTE,
-  async (args: { 
-    url: string; 
-    method?: string; 
-    headers?: Record<string, string>;
-    body?: string;
-    extract_content?: boolean;
-  }): Promise<ToolResult> => {
+  async (input): Promise<ToolResult> => {
     try {
-      const { url, method = "GET", headers, body, extract_content = false } = args;
+      const { url, method = "GET", headers, body, extract_content = false } = input as { 
+        url: string; 
+        method?: string; 
+        headers?: Record<string, string>;
+        body?: string;
+        extract_content?: boolean;
+      };
 
       // Basic URL validation
       if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -93,8 +92,9 @@ export const { definition, permissions, executor } = createTool(
             };
           }
         } catch (extractError) {
+          const errorMsg = extractError instanceof Error ? extractError.message : String(extractError);
           return {
-            content: `Content extraction failed: ${extractError.message}\n\nRaw HTML length: ${text.length} characters`,
+            content: `Content extraction failed: ${errorMsg}\n\nRaw HTML length: ${text.length} characters`,
             isError: true,
           };
         }
@@ -105,8 +105,9 @@ export const { definition, permissions, executor } = createTool(
         isError: false,
       };
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
       return {
-        content: `Fetch failed: ${error.message}`,
+        content: `Fetch failed: ${errorMsg}`,
         isError: true,
       };
     }

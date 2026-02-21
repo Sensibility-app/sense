@@ -1,8 +1,8 @@
-import { createTool, PERMISSIONS, ToolResult } from "./_shared/tool-utils.ts";
+import { createTool, type ToolResult } from "./_shared/tool-utils.ts";
 import { log } from "../logger.ts";
 import { getToolContext } from "../tools-loader.ts";
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "reload_server",
     description: "Restart the server after editing server-side TypeScript files (server/*.ts except tools). Validates syntax first. Task auto-resumes after restart.",
@@ -12,7 +12,6 @@ export const { definition, permissions, executor } = createTool(
       required: [],
     },
   },
-  PERMISSIONS.EXECUTE,
   async (): Promise<ToolResult> => {
     log("reload_server: Validating syntax...");
     

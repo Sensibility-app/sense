@@ -1,7 +1,7 @@
-import { createTool, PERMISSIONS, ToolResult } from "./_shared/tool-utils.ts";
+import { createTool, type ToolResult } from "./_shared/tool-utils.ts";
 import { getToolContext } from "../tools-loader.ts";
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "reload_client",
     description: "Refresh the browser after editing client-side code (client/*.ts, shared/*.ts, CSS, HTML).",
@@ -11,7 +11,6 @@ export const { definition, permissions, executor } = createTool(
       required: [],
     },
   },
-  PERMISSIONS.READ_ONLY,
   (): ToolResult => {
     const { broadcast } = getToolContext();
     broadcast({ type: "reload_page", reason: "Client code updated" });

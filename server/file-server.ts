@@ -1,6 +1,6 @@
 import { transpile } from "jsr:@deno/emit";
-import { crypto } from "jsr:@std/crypto@1.0.3";
-import { encodeHex } from "jsr:@std/encoding@1.0.5/hex";
+import { crypto } from "jsr:@std/crypto@^1.0.0";
+import { encodeHex } from "jsr:@std/encoding@^1.0.0/hex";
 import { log, error } from "./logger.ts";
 import { join, normalize } from "jsr:@std/path@^1.0.0";
 

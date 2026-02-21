@@ -50,7 +50,7 @@ function updateMainPadding(): void {
 autoGrowTextarea(taskInput);
 updateMainPadding();
 
-$("stopBtn").addEventListener("click", () => connection.send("stop_task"));
+$("stopBtn").addEventListener("click", () => connection.stopTask());
 
 window.addEventListener("beforeunload", () => connection.disconnect());
 
@@ -159,7 +159,7 @@ function hashHistory(turns: Turn[]): string {
   return hash;
 }
 
-function submitTask(): void {
+async function submitTask(): Promise<void> {
   const task = taskInput.value.trim();
   if (!task) return;
 
@@ -170,13 +170,13 @@ function submitTask(): void {
 
   if (isCommand(task)) {
     const parsed = parseCommand(task);
-    if (parsed && connection.sendCommand(parsed.name, parsed.args)) {
+    if (parsed && await connection.sendCommand(parsed.name, parsed.args)) {
       taskInput.value = "";
       autoGrowTextarea(taskInput);
     }
   } else {
     renderer.addBlock({ type: "user", content: task });
-    if (connection.send("task", task)) {
+    if (await connection.sendTask(task)) {
       taskInput.value = "";
       autoGrowTextarea(taskInput);
     }

@@ -1,4 +1,4 @@
-import { createTool, PERMISSIONS, ToolResult } from "../tools/_shared/tool-utils.ts";
+import { createTool, type ToolResult } from "../tools/_shared/tool-utils.ts";
 import { sanitizePath } from "../tools/_shared/sanitize.ts";
 
 function countOccurrences(str: string, search: string): number {
@@ -12,7 +12,7 @@ function countOccurrences(str: string, search: string): number {
   return count;
 }
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "edit_file",
     description: "Edit a file by replacing an exact string match. By default, requires the string to appear exactly once (unique match). Use replace_all=true to replace all occurrences.",
@@ -39,7 +39,6 @@ export const { definition, permissions, executor } = createTool(
       required: ["file_path", "old_str", "new_str"],
     },
   },
-  PERMISSIONS.READ_WRITE,
   async (input): Promise<ToolResult> => {
     const path = sanitizePath(input.file_path as string);
     const oldStr = input.old_str as string;

@@ -1,5 +1,5 @@
-import { createClient, type Message, type ResponseContentBlock, type TextBlock } from "llm";
-import { createTool, PERMISSIONS, ToolResult } from "./_shared/tool-utils.ts";
+import { createClient } from "think";
+import { createTool, type ToolResult } from "./_shared/tool-utils.ts";
 import { getToolContext } from "../tools-loader.ts";
 import { log } from "../logger.ts";
 import type { Turn, Block } from "../../shared/messages.ts";
@@ -37,85 +37,48 @@ function formatTurn(turn: Turn): string {
   }).join("\n");
 }
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "compact",
-    description: "Compact session history by summarizing old turns. Keeps recent turns intact while compressing older context into a summary. Use when session is getting too large.",
+    description: "Summarize conversation history to free up context window. Preserves key decisions, file changes, and current task state.",
     input_schema: {
       type: "object",
-      properties: {
-        keep_recent: {
-          type: "number",
-          description: "Number of recent turns to keep in full (default: 10)"
-        },
-      },
-      required: [],
+      properties: {},
     },
   },
-  PERMISSIONS.READ_WRITE,
-  async (input): Promise<ToolResult> => {
-    const keepRecent = (input.keep_recent as number) || 10;
+  async (): Promise<ToolResult> => {
     const ctx = getToolContext();
-    const session = ctx.session;
+    const turns = ctx.session.getTurns();
 
-    const sizeInfo = session.getSessionSizeInfo();
-    
-    if (sizeInfo.turnCount <= keepRecent) {
-      return {
-        content: `Session has only ${sizeInfo.turnCount} turns. Nothing to compact (threshold: ${keepRecent}).`,
-        isError: false,
-      };
+    if (turns.length < 4) {
+      return { content: "Not enough conversation to compact (need at least 4 turns).", isError: false };
     }
 
-    const { toCompact, toKeep } = session.getTurnsForCompaction(keepRecent);
-
-    if (toCompact.length === 0) {
-      return {
-        content: `No turns to compact. Session has ${sizeInfo.turnCount} turns, keeping ${keepRecent}.`,
-        isError: false,
-      };
-    }
-
-    log(`Compacting ${toCompact.length} turns, keeping ${toKeep.length} recent`);
-
-    const formattedHistory = toCompact.map(formatTurn).join("\n\n");
-
+    const formatted = turns.map(formatTurn).join("\n\n");
     const client = createClient();
 
-    const response: Message = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2048,
-      stream: false,
-      messages: [{
-        role: "user",
-        content: COMPACT_PROMPT + formattedHistory
-      }],
+    const response = await client.chat({
+      max_tokens: 4096,
+      system: "You are a precise summarizer. Output structured text only.",
+      messages: [{ role: "user", content: COMPACT_PROMPT + formatted }],
     });
 
-    const textBlocks = response.content.filter(
-      (block: ResponseContentBlock): block is TextBlock => block.type === "text",
-    );
-    const summary = textBlocks.map((b: TextBlock) => b.text).join("\n");
-
-    if (!summary) {
-      return {
-        content: "Failed to generate summary",
-        isError: true,
-      };
+    let summary = "";
+    for (const block of response.content) {
+      if (block.type === "text") summary += block.text;
     }
 
-    const result = await session.compact(summary, keepRecent);
+    if (!summary.trim()) {
+      return { content: "Failed to generate summary.", isError: true };
+    }
 
-    const newSizeInfo = session.getSessionSizeInfo();
+    ctx.session.compact(summary);
+    ctx.invalidateAgent();
+    log(`Compacted ${turns.length} turns into summary`);
 
     return {
-      content: `Session compacted successfully.
-
-Before: ${sizeInfo.turnCount} turns (~${sizeInfo.estimatedTokens} tokens)
-After: ${newSizeInfo.turnCount} turns (~${newSizeInfo.estimatedTokens} tokens)
-
-Compacted ${result.compactedCount} turns into summary, kept ${result.keptCount} recent turns.`,
+      content: `Compacted ${turns.length} turns. Summary preserved:\n\n${summary}`,
       isError: false,
     };
-  }
+  },
 );

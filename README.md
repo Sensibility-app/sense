@@ -20,41 +20,90 @@ Every tool is also a `/command`. Type `/help` to see what's available.
 | `glob` | Find files by pattern |
 | `search_files` | Search file contents with regex |
 | `eval` | Execute shell commands |
-| `web_search` | Search the web |
 | `fetch_url` | Fetch and extract web page content |
+| `browse` | Browser automation via headless Chrome |
+| `talk` | Send messages to sibling Sense apps |
+| `notes` | Persistent long-term memory (survives restarts and compaction) |
+| `compact` | Summarize conversation to save context |
+| `clear` | Reset the session |
 | `reload_server` | Restart the server after backend changes |
 | `reload_client` | Push client updates to the browser |
 | `reload_tools` | Load new or modified tools without restart |
-| `compact` | Summarize conversation to save context |
-| `clear` | Reset the session |
+| `help` | List available tools and commands |
 
 ### Adding Tools
 
-Create a file in `server/tools/`, export `definition`, `permissions`, and `executor` using the `createTool()` helper, then call `/reload_tools`. That's it.
+Create a file in `server/tools/`, export `definition` and `executor` using the `createTool()` helper, then call `/reload_tools`:
 
-## Architecture
+```typescript
+import { createTool, type ToolResult } from "./_shared/tool-utils.ts";
+
+export const { definition, executor } = createTool(
+  {
+    name: "my_tool",
+    description: "What this tool does",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The input" },
+      },
+      required: ["query"],
+    },
+  },
+  async (input): Promise<ToolResult> => {
+    const query = input.query as string;
+    return { content: `Result for: ${query}`, isError: false };
+  },
+);
+```
+
+### Platform SDKs
+
+Sense containers have access to platform SDKs via import map:
+
+| SDK | What It Does | Provided By |
+|-----|-------------|-------------|
+| `think` | LLM client (chat, streaming) | LLM Proxy service |
+| `talk` | Inter-app messaging (discover, send) | Main App service |
+| `browse` | Headless browser automation | Browser Proxy service |
+
+<details>
+<summary>Architecture</summary>
 
 ```
 sense/
 ├── server/          # Deno backend
-│   ├── main.ts      # HTTP + WebSocket server
-│   ├── claude.ts    # Claude API (streaming, tool use)
+│   ├── main.ts      # HTTP server (SSE + REST API)
+│   ├── agent.ts     # Agentic loop (streaming, parallel tool execution, context management)
 │   ├── file-server.ts   # Static files + TS transpilation
-│   ├── tools/       # Tool definitions (each file = one tool)
-│   └── websocket-handler.ts
+│   └── tools/       # Tool definitions (each file = one tool)
 ├── client/          # Browser frontend (vanilla TS)
 │   ├── client.ts    # Main entry point
-│   ├── connection.ts    # WebSocket with auto-reconnect
+│   ├── connection.ts    # SSE + fetch with auto-reconnect
 │   └── renderer.ts  # Markdown rendering + streaming UI
 ├── shared/          # Types shared between server and client
-└── sessions/        # Conversation persistence
+├── sessions/        # Conversation persistence
+├── SYSTEM.md        # Agent system prompt
+└── NOTES.md         # Agent persistent memory (auto-managed)
 ```
 
 The server transpiles TypeScript to JavaScript on-the-fly for the browser — no bundler needed.
 
+</details>
+
+## How It Works
+
+1. You type a message or `/command` in the browser
+2. The server streams a Claude response with extended thinking, executing tool calls in parallel
+3. Tool results feed back into Claude for multi-step reasoning
+4. Old tool results are automatically cleared and context is auto-compacted when it grows large
+5. The agent maintains persistent memory in `NOTES.md` across conversation resets
+6. If Sense edits its own code, it calls the appropriate reload tool
+7. After a server restart, incomplete tasks auto-resume
+
 ## Running
 
-Sense is designed to run as a container on the [Sensibility](https://sensibility.app) platform, which handles authentication, LLM proxying, and container orchestration.
+Sense runs as a container on the [Sensibility](https://sensibility.app) platform, which handles authentication, LLM proxying, and container orchestration.
 
 For local development:
 
@@ -62,17 +111,7 @@ For local development:
 deno task start
 ```
 
-Requires the `llm` import to resolve — either through the Sensibility platform's SDK or by replacing the import map entry in `deno.json`.
-
-## How It Works
-
-1. You type a message or `/command` in the browser
-2. The client sends it over WebSocket to the Deno server
-3. The server streams a Claude response, executing any tool calls
-4. Tool results feed back into Claude for multi-step reasoning
-5. All responses stream to the browser in real-time
-6. If Sense edits its own code, it calls the appropriate reload tool
-7. After a server restart, incomplete tasks auto-resume
+Requires the platform SDK imports to resolve — either through the Sensibility platform or by replacing the import map entries in `deno.json`.
 
 ## License
 

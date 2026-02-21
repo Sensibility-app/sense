@@ -7,11 +7,11 @@
 
 import { walk } from "jsr:@std/fs@^1.0.0";
 import { relative } from "jsr:@std/path@^1.0.0";
-import { createTool, PERMISSIONS, ToolResult, isBinaryFile, SKIP_DIRECTORY_PATTERNS } from "../tools/_shared/tool-utils.ts";
+import { createTool, type ToolResult, isBinaryFile, SKIP_DIRECTORY_PATTERNS } from "../tools/_shared/tool-utils.ts";
 import { getBaseDir, resolveSearchPath } from "../tools/_shared/sanitize.ts";
 import { CONFIG } from "../config.ts";
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "search_files",
     description: "Search for a text pattern in files. Returns matching lines with file paths and line numbers. Supports both literal strings and regex patterns. Useful for finding where code, text, or patterns appear in the codebase.",
@@ -30,7 +30,6 @@ export const { definition, permissions, executor } = createTool(
       required: ["pattern"],
     },
   },
-  PERMISSIONS.READ_ONLY,
   async (input): Promise<ToolResult> => {
     const baseDir = getBaseDir();
     const pattern = input.pattern as string;

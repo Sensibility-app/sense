@@ -1,5 +1,5 @@
 import { join } from "jsr:@std/path@^1.0.0";
-import { ToolModule, ToolDefinition, ToolExecutor, ToolPermissions, validateToolModule, ToolResult } from "./tools/_shared/tool-utils.ts";
+import { ToolModule, ToolDefinition, ToolExecutor, validateToolModule, ToolResult } from "./tools/_shared/tool-utils.ts";
 import { log, error as logError } from "./logger.ts";
 import { PATHS } from "./config.ts";
 import type { PersistentSession } from "./persistent-session.ts";
@@ -8,7 +8,6 @@ import type { ServerMessage } from "../shared/messages.ts";
 export interface LoadedTool {
   definition: ToolDefinition;
   executor: ToolExecutor;
-  permissions: ToolPermissions;
   sourceFile: string;
 }
 
@@ -16,7 +15,7 @@ export interface ToolContext {
   broadcast: (message: ServerMessage) => void;
   session: PersistentSession;
   invalidateTools: () => void;
-  invalidateClaude: () => void;
+  invalidateAgent: () => void;
 }
 
 let toolContext: ToolContext | null = null;
@@ -79,7 +78,6 @@ export async function loadTools(): Promise<LoadedTool[]> {
       tools.push({
         definition: validatedModule.definition,
         executor: validatedModule.executor,
-        permissions: validatedModule.permissions,
         sourceFile: entry.name,
       });
 
@@ -123,7 +121,3 @@ export async function executeTool(
   }
 }
 
-export async function getTool(name: string): Promise<LoadedTool | undefined> {
-  const tools = await loadTools();
-  return tools.find(t => t.definition.name === name);
-}

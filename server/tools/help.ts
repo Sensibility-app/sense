@@ -1,7 +1,7 @@
-import { createTool, PERMISSIONS, ToolResult } from "./_shared/tool-utils.ts";
+import { createTool, type ToolResult } from "./_shared/tool-utils.ts";
 import { loadTools } from "../tools-loader.ts";
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "help",
     description: "List all available tools/commands with their descriptions.",
@@ -11,7 +11,6 @@ export const { definition, permissions, executor } = createTool(
       required: [],
     },
   },
-  PERMISSIONS.READ_ONLY,
   async (): Promise<ToolResult> => {
     const tools = await loadTools();
 

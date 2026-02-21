@@ -1,4 +1,3 @@
-// Claude API block types
 export interface ThinkingBlock {
   type: "thinking";
   thinking: string;
@@ -47,14 +46,6 @@ export interface ToolInfo {
   }>;
 }
 
-// Client → Server
-export type ClientMessage =
-  | { type: "task"; content: string }
-  | { type: "command"; name: string; args: Record<string, string> }
-  | { type: "stop_task" }
-  | { type: "clear_session" }
-  | { type: "ping" };
-
 // Token tracking
 export interface TokenUsage {
   inputTokens: number;
@@ -76,7 +67,4 @@ export type ServerMessage =
   | { type: "task_complete"; taskId: string }
   | { type: "system"; content: string; level: "info" | "error" | "success" }
   | { type: "session_info"; history: Turn[]; tokenUsage: TokenUsage; tools: ToolInfo[] }
-  | { type: "pong" }
   | { type: "reload_page"; reason: string };
-
-export type BroadcastFn = (message: ServerMessage) => void;

@@ -5,11 +5,11 @@
  * context explosion.
  */
 
-import { createTool, PERMISSIONS, ToolResult } from "../tools/_shared/tool-utils.ts";
+import { createTool, type ToolResult } from "../tools/_shared/tool-utils.ts";
 import { sanitizePath } from "../tools/_shared/sanitize.ts";
 import { CONFIG } from "../config.ts";
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "read_file",
     description: "Read file contents from the project directory",
@@ -32,7 +32,6 @@ export const { definition, permissions, executor } = createTool(
       required: ["file_path"],
     },
   },
-  PERMISSIONS.READ_ONLY,
   async (input): Promise<ToolResult> => {
     const path = sanitizePath(input.file_path as string);
 

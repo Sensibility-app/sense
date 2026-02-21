@@ -5,10 +5,10 @@
  * by Deno's permission system (server already runs with restricted permissions).
  */
 
-import { createTool, PERMISSIONS, ToolResult } from "../tools/_shared/tool-utils.ts";
+import { createTool, type ToolResult } from "../tools/_shared/tool-utils.ts";
 import { CONFIG } from "../config.ts";
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "eval",
     description: "Execute TypeScript/JavaScript code with access to Deno APIs (Deno.readDir, Deno.readTextFile, etc.). Code runs with server's permission context.",
@@ -23,7 +23,6 @@ export const { definition, permissions, executor } = createTool(
       required: ["code"],
     },
   },
-  PERMISSIONS.EXECUTE,
   async (input): Promise<ToolResult> => {
     // Create async function from code
     const asyncFn = new Function("Deno", `

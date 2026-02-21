@@ -1,8 +1,8 @@
-import { createTool, PERMISSIONS, ToolResult } from "./_shared/tool-utils.ts";
+import { createTool, type ToolResult } from "./_shared/tool-utils.ts";
 import { getToolContext } from "../tools-loader.ts";
 import { archiveCurrentSession } from "../persistent-session.ts";
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "clear",
     description: "Clear the current session and start fresh. Archives the current session first.",
@@ -12,7 +12,6 @@ export const { definition, permissions, executor } = createTool(
       required: [],
     },
   },
-  PERMISSIONS.READ_WRITE,
   async (): Promise<ToolResult> => {
     const { session, broadcast } = getToolContext();
     

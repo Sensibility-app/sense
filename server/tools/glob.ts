@@ -6,7 +6,7 @@
  * Respects .gitignore by default.
  */
 
-import { createTool, PERMISSIONS, ToolResult } from "../tools/_shared/tool-utils.ts";
+import { createTool, type ToolResult } from "../tools/_shared/tool-utils.ts";
 import { getBaseDir, resolveSearchPath } from "../tools/_shared/sanitize.ts";
 import { expandGlob } from "jsr:@std/fs@1.0.21/expand-glob";
 import { relative } from "jsr:@std/path@1.1.4/relative";
@@ -31,7 +31,7 @@ async function loadGitignore(baseDir: string) {
   return compile(gitignoreContent);
 }
 
-export const { definition, permissions, executor } = createTool(
+export const { definition, executor } = createTool(
   {
     name: "glob",
     description: "Find files matching glob patterns. Supports *.ts, **/*.js, etc. Returns paths sorted by modification time. Respects .gitignore by default.",
@@ -54,7 +54,6 @@ export const { definition, permissions, executor } = createTool(
       required: ["pattern"],
     },
   },
-  PERMISSIONS.READ_ONLY,
   async (input): Promise<ToolResult> => {
     const baseDir = getBaseDir();
     const searchPath = resolveSearchPath(input.path as string | undefined);
