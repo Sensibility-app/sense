@@ -77,6 +77,21 @@ function clearOldToolResults(
   }
 }
 
+
+function evictOldThinkingBlocks(
+  messages: Array<{ role: string; content: string | Block[] }>,
+): void {
+  let lastAssistantIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "assistant") { lastAssistantIdx = i; break; }
+  }
+  for (let i = 0; i < lastAssistantIdx; i++) {
+    const msg = messages[i];
+    if (msg.role !== "assistant" || typeof msg.content === "string") continue;
+    msg.content = msg.content.filter(block => block.type !== "thinking");
+  }
+}
+
 function truncateToolResult(content: string): string {
   if (content.length <= CONFIG.TOOL_RESULT_MAX_LENGTH) return content;
   return content.slice(0, CONFIG.TOOL_RESULT_MAX_LENGTH) +
@@ -127,7 +142,7 @@ async function compactMessages(
   log(`Auto-compacted: ${toCompact.length} messages -> summary, kept ${toKeep.length} recent`);
 
   const compacted: Array<{ role: "user" | "assistant"; content: string | Block[] }> = [
-    { role: "user", content: `[Context auto-compacted: ${toCompact.length} messages summarized]\n\n${summary}` },
+    { role: "user", content: `[Context auto-compacted: ${toCompact.length} messages summarized. Read NOTES.md for earlier context.]\n\n${summary}` },
   ];
 
   if (toKeep[0]?.role !== "assistant") {
@@ -170,9 +185,10 @@ export async function* continueConversation(
 ): AsyncGenerator<StreamEvent> {
   const tools = await getTools();
   const systemPrompt = await getSystemPrompt();
-  let workingMessages = [...messages];
+  let workingMessages = structuredClone(messages);
 
   let cumulativeInputTokens = 0;
+  let lastIterationInputTokens = 0;
 
   for (let iteration = 0; iteration < CONFIG.MAX_ITERATIONS; iteration++) {
     if (shouldStop?.()) {
@@ -182,9 +198,18 @@ export async function* continueConversation(
     }
 
     clearOldToolResults(workingMessages);
-    if (estimateTokens(workingMessages) > CONFIG.CONTEXT_TOKEN_THRESHOLD) {
-      log("Context threshold exceeded, auto-compacting...");
-      workingMessages = await compactMessages(workingMessages);
+    evictOldThinkingBlocks(workingMessages);
+
+    const shouldCompact = lastIterationInputTokens > 0
+      ? lastIterationInputTokens > CONFIG.CONTEXT_TOKEN_THRESHOLD
+      : estimateTokens(workingMessages) > CONFIG.CONTEXT_TOKEN_THRESHOLD;
+    if (shouldCompact) {
+      log(`Context threshold exceeded (${lastIterationInputTokens > 0 ? lastIterationInputTokens + ' tokens' : 'estimated'}), auto-compacting...`);
+      try {
+        workingMessages = await compactMessages(workingMessages);
+      } catch (err) {
+        log(`Auto-compaction failed: ${err instanceof Error ? err.message : err}, continuing with pruned messages`);
+      }
     }
 
     const assistantBlocks: Block[] = [];
@@ -262,6 +287,7 @@ export async function* continueConversation(
           cacheCreationInputTokens = event.usage.cache_create;
           cacheReadInputTokens = event.usage.cache_read;
           cumulativeInputTokens += inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
+          lastIterationInputTokens = inputTokens;
           break;
 
         case "error":
