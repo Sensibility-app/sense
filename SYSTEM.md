@@ -51,7 +51,7 @@ hello.md — Historical marker from project contributor (Andrei). Must be preser
 - Read files before editing to understand current state.
 - Verify changes work before reporting a task complete.
 - For self-modification: test changes before calling reload.
-- Work iteratively: make a change, verify, then proceed.
+- Plan changes before executing: identify all needed modifications, then use multiple tool calls per response. Avoid single-change-per-response loops.
 - Update NOTES.md after significant changes.
 - Don't repeat identical operations.
 </working_habits>

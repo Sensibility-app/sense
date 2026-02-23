@@ -114,7 +114,6 @@ async function compactMessages(
   }).join("\n\n");
 
   const response = await getClient().chat({
-    model: CONFIG.CLAUDE_MODEL,
     max_tokens: 2048,
     system: "Summarize this conversation for an AI agent to continue working. Preserve: file paths modified, key decisions, current task state, unresolved issues, and the user's original request. Be concise but miss nothing critical.",
     messages: [{ role: "user", content: formatted }],
@@ -153,7 +152,6 @@ export async function handleIncomingMessage(content: string, from: string): Prom
   const systemPrompt = await getSystemPrompt();
 
   const response: ChatResponse = await getClient().chat({
-    model: CONFIG.CLAUDE_MODEL,
     max_tokens: CONFIG.MAX_TOKENS,
     system: systemPrompt,
     messages: [{ role: "user", content: `[Message from ${from}]: ${content}` }],
@@ -173,6 +171,8 @@ export async function* continueConversation(
   const tools = await getTools();
   const systemPrompt = await getSystemPrompt();
   let workingMessages = [...messages];
+
+  let cumulativeInputTokens = 0;
 
   for (let iteration = 0; iteration < CONFIG.MAX_ITERATIONS; iteration++) {
     if (shouldStop?.()) {
@@ -198,12 +198,10 @@ export async function* continueConversation(
     let cacheReadInputTokens = 0;
 
     for await (const event of getClient().stream({
-      model: CONFIG.CLAUDE_MODEL,
       max_tokens: CONFIG.MAX_TOKENS,
       system: systemPrompt,
       messages: workingMessages,
       tools,
-      thinking: { budget: 10000 },
     })) {
       switch (event.type) {
         case "thinking":
@@ -263,6 +261,7 @@ export async function* continueConversation(
           outputTokens = event.usage.output;
           cacheCreationInputTokens = event.usage.cache_create;
           cacheReadInputTokens = event.usage.cache_read;
+          cumulativeInputTokens += inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
           break;
 
         case "error":
@@ -297,6 +296,14 @@ export async function* continueConversation(
 
         toolResultBlocks.push({ type: "tool_result", tool_use_id: tool.id, content, is_error: result.isError });
         yield { type: "tool_result", toolId: tool.id, toolOutput: content, toolError: result.isError };
+      }
+
+      if (iteration >= 2 && toolResultBlocks.length > 0) {
+        const lastResult = toolResultBlocks[toolResultBlocks.length - 1];
+        if (lastResult.type === "tool_result") {
+          const tokensK = Math.round(cumulativeInputTokens / 1000);
+          lastResult.content += `\n\n[Iter ${iteration + 1}/${CONFIG.MAX_ITERATIONS} | ${tokensK}k tokens used | Batch remaining tool calls to minimize iterations]`;
+        }
       }
 
       workingMessages.push({ role: "user", content: toolResultBlocks });

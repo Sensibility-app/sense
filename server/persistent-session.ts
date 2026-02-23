@@ -13,6 +13,8 @@ export interface SessionData {
     inputTokens: number;
     outputTokens: number;
     totalTokens: number;
+    cacheCreationInputTokens: number;
+    cacheReadInputTokens: number;
   };
 }
 
@@ -34,7 +36,7 @@ export class PersistentSession {
   private sessionId = "current";
   private turns: Turn[] = [];
   private saveQueue: Promise<void> = Promise.resolve();
-  private tokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  private tokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 };
   private createdTime?: string;
 
   async load(): Promise<boolean> {
@@ -45,7 +47,9 @@ export class PersistentSession {
         const data = await Deno.readTextFile(PATHS.CURRENT_SESSION);
         const sessionData: SessionData = JSON.parse(data);
         this.turns = sessionData.turns || [];
-        this.tokenUsage = sessionData.tokenUsage || { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+        this.tokenUsage = sessionData.tokenUsage || { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 };
+        this.tokenUsage.cacheCreationInputTokens ??= 0;
+        this.tokenUsage.cacheReadInputTokens ??= 0;
         this.sessionId = sessionData.id;
         this.createdTime = sessionData.created;
         log(`Session loaded: ${this.turns.length} turns`);
@@ -116,7 +120,7 @@ export class PersistentSession {
 
   async clear(): Promise<void> {
     this.turns = [];
-    this.tokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    this.tokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 };
     this.createdTime = new Date().toISOString();
     await this.save();
   }
@@ -132,10 +136,12 @@ export class PersistentSession {
     return false;
   }
 
-  addTokenUsage(usage: { inputTokens: number; outputTokens: number; totalTokens: number }): void {
+  addTokenUsage(usage: { inputTokens: number; outputTokens: number; totalTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number }): void {
     this.tokenUsage.inputTokens += usage.inputTokens;
     this.tokenUsage.outputTokens += usage.outputTokens;
     this.tokenUsage.totalTokens += usage.totalTokens;
+    this.tokenUsage.cacheCreationInputTokens += usage.cacheCreationInputTokens;
+    this.tokenUsage.cacheReadInputTokens += usage.cacheReadInputTokens;
     this.queueSave();
   }
 

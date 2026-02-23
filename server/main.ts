@@ -51,8 +51,8 @@ function getTokenUsage() {
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     totalTokens: usage.totalTokens,
-    cacheCreationInputTokens: 0,
-    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: usage.cacheCreationInputTokens,
+    cacheReadInputTokens: usage.cacheReadInputTokens,
   };
 }
 
@@ -292,7 +292,7 @@ Deno.serve({ port: CONFIG.PORT, hostname: "::", ...tlsOptions }, async (req) => 
 
 // --- App Communication Socket ---
 
-let appCommServer: Deno.HttpServer | undefined;
+let appCommListener: Deno.Listener | undefined;
 
 async function startAppCommSocket(): Promise<void> {
   try {
@@ -303,39 +303,72 @@ async function startAppCommSocket(): Promise<void> {
     await Deno.remove(APP_SOCK);
   } catch { /* doesn't exist */ }
 
-  const { promise: listening, resolve: onReady } = Promise.withResolvers<void>();
+  appCommListener = Deno.listen({ transport: "unix", path: APP_SOCK });
 
-  appCommServer = Deno.serve(
-    { path: APP_SOCK, onListen() { onReady(); } },
-    async (req: Request): Promise<Response> => {
-      const url = new URL(req.url, "http://localhost");
+  (async () => {
+    for await (const conn of appCommListener!) {
+      handleTalkConnection(conn);
+    }
+  })().catch(() => { /* listener closed */ });
 
-      if (url.pathname === "/ping") {
-        return Response.json({ app: CONFIG.APP_NAME });
-      }
+  try { await Deno.chmod(APP_SOCK, 0o770); } catch { /* non-fatal */ }
+  log(`App comm socket: ${APP_SOCK}`);
+}
 
-      if (url.pathname === "/message" && req.method === "POST") {
-        const body = await req.json() as { content: string; from: string };
-        if (!body.content?.trim()) {
-          return Response.json({ error: "content is required" }, { status: 400 });
+const talkEncoder = new TextEncoder();
+const talkDecoder = new TextDecoder();
+
+async function handleTalkConnection(conn: Deno.Conn): Promise<void> {
+  const buf = new Uint8Array(65536);
+  let partial = "";
+
+  try {
+    while (true) {
+      const n = await conn.read(buf);
+      if (n === null) break;
+
+      partial += talkDecoder.decode(buf.subarray(0, n));
+      const lines = partial.split("\n");
+      partial = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        let request: { id: string; method: string; params: Record<string, unknown> };
+        try {
+          request = JSON.parse(trimmed);
+        } catch {
+          const resp = JSON.stringify({ id: "?", ok: false, error: "Invalid JSON" }) + "\n";
+          await conn.write(talkEncoder.encode(resp));
+          continue;
         }
 
         try {
-          const response = await handleIncomingMessage(body.content, body.from);
-          return Response.json({ response, from: CONFIG.APP_NAME });
+          let data: unknown;
+          if (request.method === "talk.ping") {
+            data = { app: CONFIG.APP_NAME };
+          } else if (request.method === "talk.message") {
+            const content = request.params.content as string;
+            const from = request.params.from as string;
+            if (!content?.trim()) throw new Error("content is required");
+            const response = await handleIncomingMessage(content, from);
+            data = { response, from: CONFIG.APP_NAME };
+          } else {
+            throw new Error(`Unknown method: ${request.method}`);
+          }
+          const resp = JSON.stringify({ id: request.id, ok: true, data }) + "\n";
+          await conn.write(talkEncoder.encode(resp));
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return Response.json({ error: msg }, { status: 500 });
+          const message = err instanceof Error ? err.message : String(err);
+          const resp = JSON.stringify({ id: request.id, ok: false, error: message }) + "\n";
+          await conn.write(talkEncoder.encode(resp));
         }
       }
-
-      return Response.json({ error: "not found" }, { status: 404 });
-    },
-  );
-
-  await listening;
-  try { await Deno.chmod(APP_SOCK, 0o770); } catch { /* non-fatal */ }
-  log(`App comm socket: ${APP_SOCK}`);
+    }
+  } catch { /* connection error */ } finally {
+    try { conn.close(); } catch { /* */ }
+  }
 }
 
 startAppCommSocket().catch((err) => {
@@ -351,8 +384,8 @@ async function shutdown() {
   }
   sseClients.clear();
 
-  if (appCommServer) {
-    await appCommServer.shutdown();
+  if (appCommListener) {
+    appCommListener.close();
     try { await Deno.remove(APP_SOCK); } catch { /* already gone */ }
   }
 
