@@ -98,59 +98,6 @@ function truncateToolResult(content: string): string {
     "\n\n[Truncated. Use more specific queries or filters to narrow results.]";
 }
 
-async function compactMessages(
-  messages: Array<{ role: "user" | "assistant"; content: string | Block[] }>,
-): Promise<Array<{ role: "user" | "assistant"; content: string | Block[] }>> {
-  let cutIndex = messages.length - CONFIG.COMPACT_KEEP_RECENT;
-  if (cutIndex <= 1) return messages;
-
-  // Don't orphan tool_result blocks from their matching tool_use
-  const cutMsg = messages[cutIndex];
-  if (cutMsg.role === "user" && Array.isArray(cutMsg.content) &&
-      cutMsg.content.some((b: Block) => b.type === "tool_result")) {
-    cutIndex--;
-  }
-  if (cutIndex <= 0) return messages;
-
-  const toCompact = messages.slice(0, cutIndex);
-  const toKeep = messages.slice(cutIndex);
-
-  const formatted = toCompact.map(m => {
-    if (typeof m.content === "string") return `[${m.role}]: ${m.content}`;
-    return m.content.map((b: Block) => {
-      switch (b.type) {
-        case "thinking": return `[thinking]: ${b.thinking.slice(0, 500)}...`;
-        case "text": return `[${m.role}]: ${b.text}`;
-        case "tool_use": return `[tool]: ${b.name}(${JSON.stringify(b.input).slice(0, 300)})`;
-        case "tool_result": return `[result]: ${b.content.slice(0, 300)}`;
-        default: return "";
-      }
-    }).join("\n");
-  }).join("\n\n");
-
-  const response = await getClient().chat({
-    max_tokens: 2048,
-    system: "Summarize this conversation for an AI agent to continue working. Preserve: file paths modified, key decisions, current task state, unresolved issues, and the user's original request. Be concise but miss nothing critical.",
-    messages: [{ role: "user", content: formatted }],
-  });
-
-  let summary = "";
-  for (const block of response.content) {
-    if (block.type === "text") summary += block.text;
-  }
-
-  log(`Auto-compacted: ${toCompact.length} messages -> summary, kept ${toKeep.length} recent`);
-
-  const compacted: Array<{ role: "user" | "assistant"; content: string | Block[] }> = [
-    { role: "user", content: `[Context auto-compacted: ${toCompact.length} messages summarized. Read NOTES.md for earlier context.]\n\n${summary}` },
-  ];
-
-  if (toKeep[0]?.role !== "assistant") {
-    compacted.push({ role: "assistant", content: "Understood. Continuing with the compacted context." });
-  }
-
-  return [...compacted, ...toKeep];
-}
 
 export type StreamEvent =
   | { type: "thinking_delta"; content: string }
@@ -200,15 +147,23 @@ export async function* continueConversation(
     clearOldToolResults(workingMessages);
     evictOldThinkingBlocks(workingMessages);
 
-    const shouldCompact = lastIterationInputTokens > 0
-      ? lastIterationInputTokens > CONFIG.CONTEXT_TOKEN_THRESHOLD
-      : estimateTokens(workingMessages) > CONFIG.CONTEXT_TOKEN_THRESHOLD;
-    if (shouldCompact) {
-      log(`Context threshold exceeded (${lastIterationInputTokens > 0 ? lastIterationInputTokens + ' tokens' : 'estimated'}), auto-compacting...`);
-      try {
-        workingMessages = await compactMessages(workingMessages);
-      } catch (err) {
-        log(`Auto-compaction failed: ${err instanceof Error ? err.message : err}, continuing with pruned messages`);
+    // Hard fail-safe: mechanical truncation at hard limit (no LLM call, can't fail)
+    const currentTokens = lastIterationInputTokens > 0
+      ? lastIterationInputTokens
+      : estimateTokens(workingMessages);
+    if (currentTokens > CONFIG.CONTEXT_HARD_LIMIT) {
+      const keepCount = CONFIG.FAILSAFE_KEEP_RECENT;
+      const dropped = workingMessages.length - keepCount;
+      if (dropped > 0) {
+        log(`Hard limit exceeded (${currentTokens} tokens), truncating ${dropped} messages`);
+        const kept = workingMessages.slice(-keepCount);
+        workingMessages = [
+          { role: "user" as const, content: `[EMERGENCY: Context auto-truncated \u2014 ${dropped} messages dropped to prevent failure. Read NOTES.md for earlier context.]` },
+        ];
+        if (kept[0]?.role !== "assistant") {
+          workingMessages.push({ role: "assistant" as const, content: "Understood. Reading NOTES.md to restore context." });
+        }
+        workingMessages.push(...kept);
       }
     }
 
@@ -324,11 +279,21 @@ export async function* continueConversation(
         yield { type: "tool_result", toolId: tool.id, toolOutput: content, toolError: result.isError };
       }
 
-      if (iteration >= 2 && toolResultBlocks.length > 0) {
+      if (iteration >= 1 && toolResultBlocks.length > 0) {
         const lastResult = toolResultBlocks[toolResultBlocks.length - 1];
         if (lastResult.type === "tool_result") {
           const tokensK = Math.round(cumulativeInputTokens / 1000);
-          lastResult.content += `\n\n[Iter ${iteration + 1}/${CONFIG.MAX_ITERATIONS} | ${tokensK}k tokens used | Batch remaining tool calls to minimize iterations]`;
+          let nudge: string;
+          if (cumulativeInputTokens > CONFIG.CONTEXT_CRITICAL_THRESHOLD) {
+            nudge = `\ud83d\udea8 CRITICAL: Auto-truncation at ${Math.round(CONFIG.CONTEXT_HARD_LIMIT / 1000)}k! Save context to NOTES.md and call /compact NOW`;
+          } else if (cumulativeInputTokens > CONFIG.CONTEXT_WARNING_THRESHOLD) {
+            nudge = `\u26a0\ufe0f Context large \u2014 use /compact with /notes to preserve context`;
+          } else if (cumulativeInputTokens > CONFIG.CONTEXT_SUGGEST_THRESHOLD) {
+            nudge = `Consider using /compact soon`;
+          } else {
+            nudge = `Batch remaining tool calls to minimize iterations`;
+          }
+          lastResult.content += `\n\n[Iter ${iteration + 1}/${CONFIG.MAX_ITERATIONS} | ${tokensK}k tokens | ${nudge}]`;
         }
       }
 

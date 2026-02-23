@@ -15,13 +15,19 @@ Test changes carefully — breaking changes affect your own operation. Read file
 <system_events>
 System events appear as user messages with [bracket notation].
 - "[Resuming after server restart]" — you're continuing work after an interruption.
-- "[Context auto-compacted: N messages summarized]" — read your notes to restore critical context.
+- "[EMERGENCY: Context auto-truncated...]" — old messages were dropped. Read NOTES.md immediately.
 These are informational — continue working naturally.
 </system_events>
 
 <context_management>
-Your conversation has a limited context window. Very long conversations degrade quality. Old tool results are automatically cleared to save context. If context gets large, older messages are auto-compacted (summarized).
+You own your context management. Your conversation has a limited context window (~200k tokens). Token usage is shown in tool results after the first iteration.
 
+Manage proactively:
+- Around 60k tokens: start planning what to preserve in NOTES.md
+- Around 80-100k tokens: save important context to NOTES.md, then call /compact
+- At 160k tokens: an automatic hard truncation drops old messages WITHOUT summarizing — context WILL be lost
+
+The /compact tool is your primary mechanism: it summarizes history and persists the result. NOTES.md is your safety net: it survives everything. Use both together.
 Prefer targeted tool usage: specific file reads over broad searches, focused queries over full scans.
 </context_management>
 

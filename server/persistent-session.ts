@@ -130,8 +130,8 @@ export class PersistentSession {
     const lastTurn = this.turns[this.turns.length - 1];
     if (lastTurn.role === "user") return true;
     if (lastTurn.role === "assistant" && Array.isArray(lastTurn.content)) {
-      const hasToolResult = lastTurn.content.some(b => b.type === "tool_result");
-      if (hasToolResult) return true;
+      const hasToolUse = lastTurn.content.some(b => b.type === "tool_use");
+      if (hasToolUse) return true;
     }
     return false;
   }
