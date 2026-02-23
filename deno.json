@@ -3,9 +3,9 @@
     "start": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run --allow-ffi --allow-sys --allow-import server/main.ts"
   },
   "imports": {
-    "think": "https://sensibility.app/think.ts",
-    "browse": "https://sensibility.app/browse.ts",
-    "talk": "https://sensibility.app/talk.ts"
+    "think": "file:///data/sdk/think.ts",
+    "browse": "file:///data/sdk/browse.ts",
+    "talk": "file:///data/sdk/talk.ts"
   },
   "compilerOptions": {
     "lib": ["deno.window", "dom"],
