@@ -14,7 +14,6 @@ export const PATHS = {
 export const CONFIG = {
   PORT: parseInt(Deno.env.get("PORT") || "8080"),
   APP_NAME: Deno.env.get("APP_NAME") || "sense",
-  CLAUDE_MODEL: Deno.env.get("CLAUDE_MODEL") || "claude-sonnet-4-5-20250929",
   MAX_ITERATIONS: 25,
   MAX_TOKENS: 16000,
   MAX_FILE_SIZE: 10000,
