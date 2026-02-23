@@ -58,6 +58,7 @@ export const { definition, executor } = createTool(
     const client = createClient();
 
     const response = await client.chat({
+      model: "fast",
       max_tokens: 4096,
       system: "You are a precise summarizer. Output structured text only.",
       messages: [{ role: "user", content: COMPACT_PROMPT + formatted }],
