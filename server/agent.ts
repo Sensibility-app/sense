@@ -8,6 +8,7 @@ import {
   type LLMClient,
   type ChatResponse,
   type StreamEvent as LLMEvent,
+  type ServerTool,
 } from "think";
 
 let cachedTools: Awaited<ReturnType<typeof getToolDefinitions>> | null = null;
@@ -61,6 +62,8 @@ export type StreamEvent =
   | { type: "text_complete"; content: string }
   | { type: "tool_use"; toolId: string; toolName: string; toolInput: unknown }
   | { type: "tool_result"; toolId: string; toolOutput: string | ContentPart[]; toolError: boolean }
+  | { type: "server_tool_start"; toolId: string; toolName: string }
+  | { type: "server_tool_result"; toolId: string; toolName: string; content: unknown }
   | { type: "turn_complete"; blocks: Block[] }
   | { type: "token_usage"; usage: { inputTokens: number; outputTokens: number; totalTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number } }
   | { type: "complete" };
@@ -106,11 +109,16 @@ export async function* continueConversation(
     let cacheCreationInputTokens = 0;
     let cacheReadInputTokens = 0;
 
+    const serverTools: ServerTool[] = [
+      { type: "web_search_20260209", name: "web_search" },
+      { type: "web_fetch_20260209", name: "web_fetch" },
+    ];
     for await (const event of getClient().stream({
       max_tokens: CONFIG.MAX_TOKENS,
       system: systemPrompt,
       messages: workingMessages,
       tools,
+      server_tools: serverTools,
     })) {
       switch (event.type) {
         case "thinking":
@@ -164,6 +172,24 @@ export async function* continueConversation(
           currentTool = null;
           break;
         }
+
+
+        case "server_tool_start":
+          if (currentText) {
+            assistantBlocks.push({ type: "text", text: currentText });
+            yield { type: "text_complete", content: currentText };
+            currentText = "";
+          }
+          yield { type: "server_tool_start", toolId: event.id, toolName: event.name };
+          break;
+
+        case "server_tool_result":
+          yield { type: "server_tool_result", toolId: event.id, toolName: event.name, content: event.content };
+          break;
+
+        case "citation":
+          // Citations are attached to text blocks — not yielded separately to the UI for now
+          break;
 
         case "compaction":
           assistantBlocks.push({ type: "compaction", content: event.content });

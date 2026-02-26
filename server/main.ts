@@ -73,6 +73,12 @@ function handleStreamEvent(event: StreamEvent): void {
     case "tool_result":
       broadcast({ type: "tool_result", taskId, toolId: event.toolId, toolOutput: event.toolOutput, toolError: event.toolError });
       break;
+    case "server_tool_start":
+      broadcast({ type: "server_tool_start", taskId, toolId: event.toolId, toolName: event.toolName });
+      break;
+    case "server_tool_result":
+      broadcast({ type: "server_tool_result", taskId, toolId: event.toolId, toolName: event.toolName, content: event.content });
+      break;
     case "turn_complete": {
       const lastTurn = session.getLastTurn();
       const role = lastTurn?.role === "assistant" ? "user" : "assistant";
