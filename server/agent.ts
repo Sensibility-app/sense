@@ -2,7 +2,7 @@ import { join } from "jsr:@std/path@^1.0.0";
 import { getToolDefinitions, executeTool } from "./tools-loader.ts";
 import { log, error } from "./logger.ts";
 import { CONFIG, PATHS } from "./config.ts";
-import type { Block } from "../shared/messages.ts";
+import type { Block, ContentPart } from "../shared/messages.ts";
 import {
   createClient,
   type LLMClient,
@@ -40,64 +40,19 @@ function getClient(): LLMClient {
   return client;
 }
 
-// --- Context Management Helpers ---
-
-function estimateTokens(messages: Array<{ role: string; content: string | Block[] }>): number {
-  let chars = 0;
-  for (const msg of messages) {
-    if (typeof msg.content === "string") {
-      chars += msg.content.length;
-    } else {
-      for (const block of msg.content) {
-        switch (block.type) {
-          case "thinking": chars += block.thinking.length; break;
-          case "text": chars += block.text.length; break;
-          case "tool_use": chars += JSON.stringify(block.input).length + block.name.length; break;
-          case "tool_result": chars += block.content.length; break;
-        }
-      }
+function truncateToolResult(content: string | ContentPart[]): string | ContentPart[] {
+  if (typeof content === "string") {
+    if (content.length <= CONFIG.TOOL_RESULT_MAX_LENGTH) return content;
+    return content.slice(0, CONFIG.TOOL_RESULT_MAX_LENGTH) +
+      "\n\n[Truncated. Use more specific queries or filters to narrow results.]";
+  }
+  return content.map(part => {
+    if (part.type === "text" && part.text.length > CONFIG.TOOL_RESULT_MAX_LENGTH) {
+      return { ...part, text: part.text.slice(0, CONFIG.TOOL_RESULT_MAX_LENGTH) + "\n\n[Truncated.]" };
     }
-  }
-  return Math.ceil(chars / 4);
+    return part;
+  });
 }
-
-function clearOldToolResults(
-  messages: Array<{ role: string; content: string | Block[] }>,
-): void {
-  const clearBefore = messages.length - CONFIG.TOOL_RESULT_CLEAR_AFTER;
-  if (clearBefore <= 0) return;
-  for (let i = 0; i < clearBefore; i++) {
-    const msg = messages[i];
-    if (typeof msg.content === "string" || msg.role !== "user") continue;
-    for (const block of msg.content) {
-      if (block.type === "tool_result" && block.content.length > 200) {
-        block.content = "[Previous tool result cleared to save context]";
-      }
-    }
-  }
-}
-
-
-function evictOldThinkingBlocks(
-  messages: Array<{ role: string; content: string | Block[] }>,
-): void {
-  let lastAssistantIdx = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === "assistant") { lastAssistantIdx = i; break; }
-  }
-  for (let i = 0; i < lastAssistantIdx; i++) {
-    const msg = messages[i];
-    if (msg.role !== "assistant" || typeof msg.content === "string") continue;
-    msg.content = msg.content.filter(block => block.type !== "thinking");
-  }
-}
-
-function truncateToolResult(content: string): string {
-  if (content.length <= CONFIG.TOOL_RESULT_MAX_LENGTH) return content;
-  return content.slice(0, CONFIG.TOOL_RESULT_MAX_LENGTH) +
-    "\n\n[Truncated. Use more specific queries or filters to narrow results.]";
-}
-
 
 export type StreamEvent =
   | { type: "thinking_delta"; content: string }
@@ -105,7 +60,7 @@ export type StreamEvent =
   | { type: "text_delta"; content: string }
   | { type: "text_complete"; content: string }
   | { type: "tool_use"; toolId: string; toolName: string; toolInput: unknown }
-  | { type: "tool_result"; toolId: string; toolOutput: string; toolError: boolean }
+  | { type: "tool_result"; toolId: string; toolOutput: string | ContentPart[]; toolError: boolean }
   | { type: "turn_complete"; blocks: Block[] }
   | { type: "token_usage"; usage: { inputTokens: number; outputTokens: number; totalTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number } }
   | { type: "complete" };
@@ -132,10 +87,7 @@ export async function* continueConversation(
 ): AsyncGenerator<StreamEvent> {
   const tools = await getTools();
   const systemPrompt = await getSystemPrompt();
-  let workingMessages = structuredClone(messages);
-
-  let cumulativeInputTokens = 0;
-  let lastIterationInputTokens = 0;
+  const workingMessages = structuredClone(messages);
 
   for (let iteration = 0; iteration < CONFIG.MAX_ITERATIONS; iteration++) {
     if (shouldStop?.()) {
@@ -144,40 +96,8 @@ export async function* continueConversation(
       break;
     }
 
-    clearOldToolResults(workingMessages);
-    evictOldThinkingBlocks(workingMessages);
-
-    // Hard fail-safe: mechanical truncation at hard limit (no LLM call, can't fail)
-    const currentTokens = lastIterationInputTokens > 0
-      ? lastIterationInputTokens
-      : estimateTokens(workingMessages);
-    if (currentTokens > CONFIG.CONTEXT_HARD_LIMIT) {
-      const keepCount = CONFIG.FAILSAFE_KEEP_RECENT;
-      const dropped = workingMessages.length - keepCount;
-      if (dropped > 0) {
-        log(`Hard limit exceeded (${currentTokens} tokens), truncating ${dropped} messages`);
-        const kept = workingMessages.slice(-keepCount);
-        // Drop orphaned tool_result messages whose tool_use was truncated away
-        while (
-          kept.length > 0 &&
-          kept[0].role === "user" &&
-          Array.isArray(kept[0].content) &&
-          (kept[0].content as Block[]).every(b => b.type === "tool_result")
-        ) {
-          kept.shift();
-        }
-        workingMessages = [
-          { role: "user" as const, content: `[EMERGENCY: Context auto-truncated \u2014 ${dropped} messages dropped to prevent failure. Read NOTES.md for earlier context.]` },
-        ];
-        if (kept[0]?.role !== "assistant") {
-          workingMessages.push({ role: "assistant" as const, content: "Understood. Reading NOTES.md to restore context." });
-        }
-        workingMessages.push(...kept);
-      }
-    }
-
     const assistantBlocks: Block[] = [];
-    const pendingTools: Array<{ id: string; name: string; input: unknown }> = [];
+    const pendingTools: Array<{ id: string; name: string; input: unknown; parseError?: string }> = [];
     let currentThinking = "";
     let currentText = "";
     let currentTool: { id: string; name: string; json: string } | null = null;
@@ -225,20 +145,30 @@ export async function* continueConversation(
         case "tool_done": {
           if (!currentTool) break;
           let parsedInput: unknown = {};
-          try {
-            parsedInput = JSON.parse(currentTool.json);
-          } catch (err) {
-            error("Failed to parse tool input JSON:", currentTool.json, err);
+          let parseError: string | undefined;
+          const rawJson = currentTool.json.trim();
+          if (rawJson === "" || rawJson === "{}") {
+            parsedInput = {};
+          } else {
+            try {
+              parsedInput = JSON.parse(rawJson);
+            } catch (err) {
+              error("Failed to parse tool input JSON:", currentTool.json, err);
+              parseError = `Malformed JSON input: ${(err as Error).message}. Retry with shorter or simpler input.`;
+            }
           }
-
           assistantBlocks.push({ type: "tool_use", id: currentTool.id, name: currentTool.name, input: parsedInput });
           log(`[TOOL] ${currentTool.name}(${JSON.stringify(parsedInput)})`);
           yield { type: "tool_use", toolId: currentTool.id, toolName: currentTool.name, toolInput: parsedInput };
-
-          pendingTools.push({ id: currentTool.id, name: currentTool.name, input: parsedInput });
+          pendingTools.push({ id: currentTool.id, name: currentTool.name, input: parsedInput, parseError });
           currentTool = null;
           break;
         }
+
+        case "compaction":
+          assistantBlocks.push({ type: "compaction", content: event.content });
+          log(`[COMPACTION] Context compacted (${event.content.length} chars summary)`);
+          break;
 
         case "usage":
           if (currentText) {
@@ -250,8 +180,6 @@ export async function* continueConversation(
           outputTokens = event.usage.output;
           cacheCreationInputTokens = event.usage.cache_create;
           cacheReadInputTokens = event.usage.cache_read;
-          cumulativeInputTokens += inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
-          lastIterationInputTokens = inputTokens;
           break;
 
         case "error":
@@ -273,7 +201,11 @@ export async function* continueConversation(
     if (pendingTools.length > 0) {
       const toolResultBlocks: Block[] = [];
       const results = await Promise.allSettled(
-        pendingTools.map(t => executeTool(t.name, t.input as Record<string, unknown>))
+        pendingTools.map(t =>
+          t.parseError
+            ? Promise.reject(new Error(t.parseError))
+            : executeTool(t.name, t.input as Record<string, unknown>)
+        )
       );
 
       for (let i = 0; i < pendingTools.length; i++) {
@@ -283,27 +215,8 @@ export async function* continueConversation(
           ? settled.value
           : { content: (settled.reason as Error)?.message || "Tool execution failed", isError: true };
         const content = truncateToolResult(result.content);
-
         toolResultBlocks.push({ type: "tool_result", tool_use_id: tool.id, content, is_error: result.isError });
         yield { type: "tool_result", toolId: tool.id, toolOutput: content, toolError: result.isError };
-      }
-
-      if (iteration >= 1 && toolResultBlocks.length > 0) {
-        const lastResult = toolResultBlocks[toolResultBlocks.length - 1];
-        if (lastResult.type === "tool_result") {
-          const tokensK = Math.round(cumulativeInputTokens / 1000);
-          let nudge: string;
-          if (cumulativeInputTokens > CONFIG.CONTEXT_CRITICAL_THRESHOLD) {
-            nudge = `\ud83d\udea8 CRITICAL: Auto-truncation at ${Math.round(CONFIG.CONTEXT_HARD_LIMIT / 1000)}k! Save context to NOTES.md and call /compact NOW`;
-          } else if (cumulativeInputTokens > CONFIG.CONTEXT_WARNING_THRESHOLD) {
-            nudge = `\u26a0\ufe0f Context large \u2014 use /compact with /notes to preserve context`;
-          } else if (cumulativeInputTokens > CONFIG.CONTEXT_SUGGEST_THRESHOLD) {
-            nudge = `Consider using /compact soon`;
-          } else {
-            nudge = `Batch remaining tool calls to minimize iterations`;
-          }
-          lastResult.content += `\n\n[Iter ${iteration + 1}/${CONFIG.MAX_ITERATIONS} | ${tokensK}k tokens | ${nudge}]`;
-        }
       }
 
       workingMessages.push({ role: "user", content: toolResultBlocks });
