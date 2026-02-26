@@ -157,6 +157,15 @@ export async function* continueConversation(
       if (dropped > 0) {
         log(`Hard limit exceeded (${currentTokens} tokens), truncating ${dropped} messages`);
         const kept = workingMessages.slice(-keepCount);
+        // Drop orphaned tool_result messages whose tool_use was truncated away
+        while (
+          kept.length > 0 &&
+          kept[0].role === "user" &&
+          Array.isArray(kept[0].content) &&
+          (kept[0].content as Block[]).every(b => b.type === "tool_result")
+        ) {
+          kept.shift();
+        }
         workingMessages = [
           { role: "user" as const, content: `[EMERGENCY: Context auto-truncated \u2014 ${dropped} messages dropped to prevent failure. Read NOTES.md for earlier context.]` },
         ];

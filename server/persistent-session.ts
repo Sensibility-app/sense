@@ -160,7 +160,15 @@ export class PersistentSession {
 
     const compactedCount = this.turns.length - keepRecentCount;
     const recentTurns = this.turns.slice(-keepRecentCount);
-
+    // Drop orphaned tool_result turns whose tool_use was compacted away
+    while (
+      recentTurns.length > 0 &&
+      recentTurns[0].role === "user" &&
+      Array.isArray(recentTurns[0].content) &&
+      (recentTurns[0].content as Block[]).every(b => b.type === "tool_result")
+    ) {
+      recentTurns.shift();
+    }
     const summaryTurn = createTurn("user", `[Session compacted: ${compactedCount} turns summarized]\n\n${summary}`, "system");
     this.turns = [summaryTurn, ...recentTurns];
     await this.save();
