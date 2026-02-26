@@ -8,7 +8,6 @@ import {
   type LLMClient,
   type ChatResponse,
   type StreamEvent as LLMEvent,
-  type ServerTool,
 } from "think";
 
 let cachedTools: Awaited<ReturnType<typeof getToolDefinitions>> | null = null;
@@ -101,6 +100,7 @@ export async function* continueConversation(
 
     const assistantBlocks: Block[] = [];
     const pendingTools: Array<{ id: string; name: string; input: unknown; parseError?: string }> = [];
+    let pauseTurn = false;
     let currentThinking = "";
     let currentText = "";
     let currentTool: { id: string; name: string; json: string } | null = null;
@@ -109,16 +109,11 @@ export async function* continueConversation(
     let cacheCreationInputTokens = 0;
     let cacheReadInputTokens = 0;
 
-    const serverTools: ServerTool[] = [
-      { type: "web_search_20260209", name: "web_search" },
-      { type: "web_fetch_20260209", name: "web_fetch" },
-    ];
     for await (const event of getClient().stream({
       max_tokens: CONFIG.MAX_TOKENS,
       system: systemPrompt,
       messages: workingMessages,
       tools,
-      server_tools: serverTools,
     })) {
       switch (event.type) {
         case "thinking":
@@ -218,6 +213,10 @@ export async function* continueConversation(
             currentText = "";
           }
           break;
+
+        case "pause_turn":
+          pauseTurn = true;
+          break;
       }
     }
 
@@ -259,6 +258,8 @@ export async function* continueConversation(
         cacheReadInputTokens,
       },
     };
+
+    if (pauseTurn) continue;
 
     if (pendingTools.length === 0) break;
   }
