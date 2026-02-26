@@ -4,13 +4,13 @@ const RECONNECT_DELAY = 2000;
 
 export class Connection {
   private eventSource: EventSource | null = null;
-  private statusEl: HTMLElement;
+  private formEl: HTMLElement;
   private base: string;
 
   public onMessage: (message: ServerMessage) => void = () => {};
 
-  constructor(statusEl: HTMLElement) {
-    this.statusEl = statusEl;
+  constructor(formEl: HTMLElement) {
+    this.formEl = formEl;
     this.base = window.location.pathname.replace(/\/$/, "");
   }
 
@@ -20,7 +20,7 @@ export class Connection {
     this.eventSource = new EventSource(`${this.base}/events`);
 
     this.eventSource.onopen = () => {
-      this.statusEl.className = "status connected";
+      this.formEl.dataset.status = "connected";
     };
 
     this.eventSource.onmessage = (e) => {
@@ -30,7 +30,7 @@ export class Connection {
     };
 
     this.eventSource.onerror = () => {
-      this.statusEl.className = "status reconnecting";
+      this.formEl.dataset.status = "reconnecting";
       if (this.eventSource?.readyState === EventSource.CLOSED) {
         this.eventSource = null;
         setTimeout(() => this.connect(), RECONNECT_DELAY);

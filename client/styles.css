@@ -8,7 +8,6 @@
   --accent-color: #0071e3;
   --error-color: #ff3b30;
   --error-bg: #fff5f5;
-  --status-default: #86868b;
   --status-connected: #34c759;
   --status-reconnecting: #ff9500;
   --status-error: #ff3b30;
@@ -25,7 +24,6 @@
     --accent-color: #0a84ff;
     --error-color: #ff453a;
     --error-bg: #2c1a1a;
-    --status-default: #86868b;
     --status-connected: #34c759;
     --status-reconnecting: #ff9500;
     --status-error: #ff453a;
@@ -55,28 +53,21 @@ main {
   margin-bottom: 16px;
 }
 
-#status {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: var(--status-default);
+#taskForm[data-status="connected"] #taskInput {
+  border-color: var(--status-connected);
 }
 
-#status.connected {
-  background-color: var(--status-connected);
+#taskForm[data-status="reconnecting"] #taskInput {
+  border-color: var(--status-reconnecting);
 }
 
-#status.reconnecting {
-  background-color: var(--status-reconnecting);
-}
-
-#status.error {
-  background-color: var(--status-error);
+#taskForm[data-status="error"] #taskInput {
+  border-color: var(--status-error);
 }
 
 #taskForm {
   position: fixed;
-  bottom: env(safe-area-inset-bottom);
+  bottom: max(16px, env(safe-area-inset-bottom));
   left: calc(16px + env(safe-area-inset-left));
   right: calc(16px + env(safe-area-inset-right));
 }
@@ -84,6 +75,7 @@ main {
 #taskInput {
   display: block;
   font-size: 16px;
+  font-family: inherit;
   width: 100%;
   box-sizing: border-box;
   resize: none;

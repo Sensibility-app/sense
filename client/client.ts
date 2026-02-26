@@ -6,7 +6,7 @@ import type { ServerMessage, Turn, Block } from "../shared/messages.ts";
 const $ = (id: string) => document.getElementById(id)!;
 
 const renderer = new Renderer($("output"), $("submitBtn"), $("stopBtn"));
-const connection = new Connection($("status"));
+const connection = new Connection($("taskForm"));
 const taskInput = $("taskInput") as HTMLTextAreaElement;
 let lastHistoryHash = "";
 
