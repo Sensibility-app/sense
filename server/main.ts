@@ -149,7 +149,7 @@ if (session.needsResume()) {
       broadcast({ type: "task_start", taskId: currentTaskId });
 
       await executeTask(async () => {
-        for await (const event of continueConversation(session.getClaudeMessages(), () => stopRequested)) {
+        for await (const event of continueConversation(session.getLLMMessages(), () => stopRequested)) {
           handleStreamEvent(event);
         }
       });
@@ -228,7 +228,7 @@ Deno.serve({ port: CONFIG.PORT, hostname: "::", ...tlsOptions }, async (req) => 
     broadcast({ type: "task_start", taskId: currentTaskId });
 
     executeTask(async () => {
-      for await (const event of continueConversation(session.getClaudeMessages(), () => stopRequested)) {
+      for await (const event of continueConversation(session.getLLMMessages(), () => stopRequested)) {
         handleStreamEvent(event);
       }
     }).catch((err: Error) => {

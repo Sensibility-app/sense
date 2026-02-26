@@ -1,3 +1,5 @@
+import type { ContentPart } from "../shared/messages.ts";
+
 const MARKDOWN_DEBOUNCE_MS = 50;
 
 type RenderBlock =
@@ -5,7 +7,7 @@ type RenderBlock =
   | { type: "thinking"; content: string }
   | { type: "text"; content: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
-  | { type: "tool_result"; tool_use_id: string; content: string; is_error: boolean }
+  | { type: "tool_result"; tool_use_id: string; content: string | ContentPart[]; is_error: boolean }
   | { type: "system"; content: string; level: string };
 
 export class Renderer {
@@ -97,10 +99,7 @@ export class Renderer {
             toolEl.classList.add("error");
           }
           const content = toolEl.querySelector(".tool-content") as HTMLElement;
-          const outputPre = document.createElement("pre");
-          outputPre.className = "tool-output";
-          outputPre.textContent = block.content;
-          content.appendChild(outputPre);
+          this.renderToolResultContent(content, block.content);
         }
         break;
       }
@@ -182,6 +181,31 @@ export class Renderer {
     inner.textContent = content;
     el.appendChild(inner);
     this.output.appendChild(el);
+  }
+
+
+  private renderToolResultContent(container: HTMLElement, content: string | ContentPart[]): void {
+    if (typeof content === "string") {
+      const pre = document.createElement("pre");
+      pre.className = "tool-output";
+      pre.textContent = content;
+      container.appendChild(pre);
+      return;
+    }
+    for (const part of content) {
+      if (part.type === "text") {
+        const pre = document.createElement("pre");
+        pre.className = "tool-output";
+        pre.textContent = part.text;
+        container.appendChild(pre);
+      } else if (part.type === "image") {
+        const img = document.createElement("img");
+        img.className = "tool-output-image";
+        img.src = `data:${part.source.media_type};base64,${part.source.data}`;
+        img.alt = "Tool output";
+        container.appendChild(img);
+      }
+    }
   }
 
   private scheduleMarkdown(element: HTMLElement, text: string): void {

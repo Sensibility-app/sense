@@ -79,6 +79,13 @@
   font-size: 12px;
 }
 
+.message.tool .tool-content .tool-output-image {
+  max-width: 100%;
+  border-radius: 4px;
+  margin: 8px 0;
+  display: block;
+}
+
 .message.tool.error details {
   border-color: var(--error-color);
 }

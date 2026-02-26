@@ -6,18 +6,20 @@ export const { definition, executor } = createTool(
     name: "browse",
     description:
       "Control a headless browser. Actions: navigate (go to URL), view_self (open your own app), " +
-      "text (extract page text), snapshot (accessibility tree), click/type/fill/press/hover/scroll/select (interact with elements by ref), " +
-      "evaluate (run JS in page), tabs (list open tabs). " +
-      "Typical flow: navigate → snapshot (get refs) → click/type/fill → text (read result).",
+      "text (extract page text), snapshot (accessibility tree), screenshot (visual JPEG capture — you can see the image), " +
+      "click/type/fill/press/hover/scroll/select (interact with elements by ref), " +
+      "evaluate (run JS expression in page — no 'return' statements, use JSON.stringify() for objects), tabs (list open tabs). " +
+      "For visual verification: use screenshot to SEE the page. " +
+      "Typical flow: navigate → snapshot (get refs) → click/type/fill → screenshot or text (verify result).",
     input_schema: {
       type: "object",
       properties: {
         action: {
           type: "string",
           description:
-            "Browser action: navigate, view_self, text, snapshot, click, type, fill, press, hover, scroll, select, evaluate, tabs",
+            "Browser action: navigate, view_self, text, snapshot, screenshot, click, type, fill, press, hover, scroll, select, evaluate, tabs",
           enum: [
-            "navigate", "view_self", "text", "snapshot",
+            "navigate", "view_self", "text", "snapshot", "screenshot",
             "click", "type", "fill", "press", "hover", "scroll", "select",
             "evaluate", "tabs",
           ],
@@ -44,7 +46,7 @@ export const { definition, executor } = createTool(
         },
         expression: {
           type: "string",
-          description: "JavaScript expression to evaluate in the page (for 'evaluate' action)",
+          description: "JavaScript expression to evaluate in page (for 'evaluate' action — NO 'return' statements, use JSON.stringify() to return objects)",
         },
         filter: {
           type: "string",
@@ -126,6 +128,16 @@ export const { definition, executor } = createTool(
         if (result.tabs.length === 0) return { content: "No open tabs", isError: false };
         const lines = result.tabs.map((t: { id: string; url: string; title: string }) => `  [${t.id}] ${t.title} — ${t.url}`);
         return { content: `Open tabs:\n${lines.join("\n")}`, isError: false };
+      }
+      case "screenshot": {
+        const result = await browse.screenshot();
+        return {
+          content: [
+            { type: "text", text: "Screenshot captured" },
+            { type: "image", source: { type: "base64", media_type: result.contentType, data: result.data } },
+          ],
+          isError: false,
+        };
       }
       default:
         return { content: `Unknown action: ${action}`, isError: true };

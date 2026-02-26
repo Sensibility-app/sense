@@ -6,7 +6,7 @@ Built with Deno and vanilla TypeScript. No frameworks, no build step.
 
 ## What It Does
 
-Sense is a containerized AI assistant powered by Claude. It has full access to its own codebase and can modify itself on request — editing server logic, updating its UI, adding new tools — all while running.
+Sense is a containerized AI assistant that can modify itself. It has full access to its own codebase and can edit server logic, update its UI, and add new tools — all while running.
 
 Every tool is also a `/command`. Type `/help` to see what's available.
 
@@ -94,8 +94,8 @@ The server transpiles TypeScript to JavaScript on-the-fly for the browser — no
 ## How It Works
 
 1. You type a message or `/command` in the browser
-2. The server streams a Claude response with extended thinking, executing tool calls in parallel
-3. Tool results feed back into Claude for multi-step reasoning
+2. The server streams an LLM response with extended thinking, executing tool calls in parallel
+3. Tool results feed back into the LLM for multi-step reasoning
 4. Old tool results are automatically cleared and context is auto-compacted when it grows large
 5. The agent maintains persistent memory in `NOTES.md` across conversation resets
 6. If Sense edits its own code, it calls the appropriate reload tool

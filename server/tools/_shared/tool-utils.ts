@@ -1,4 +1,5 @@
 import { sanitizeErrorMessage } from "./sanitize.ts";
+import type { ContentPart } from "../../shared/messages.ts";
 
 export interface ToolDefinition {
   name: string;
@@ -11,6 +12,7 @@ export interface ToolDefinition {
       description: string;
       default?: unknown;
       enum?: unknown[];
+      items?: unknown;
     }>;
     required?: string[];
     additionalProperties?: boolean;
@@ -19,7 +21,7 @@ export interface ToolDefinition {
 }
 
 export interface ToolResult {
-  content: string;
+  content: string | ContentPart[];
   isError: boolean;
 }
 

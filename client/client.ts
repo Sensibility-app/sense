@@ -1,7 +1,7 @@
 import { Renderer } from "./renderer.ts";
 import { Connection } from "./connection.ts";
 import { isCommand, parseCommand } from "./command-parser.ts";
-import type { ServerMessage, Turn, Block } from "../shared/messages.ts";
+import type { ServerMessage, Turn, Block, ContentPart } from "../shared/messages.ts";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -118,8 +118,8 @@ function renderHistory(turns: Turn[]): void {
   }
 }
 
-function collectToolResults(turns: Turn[]): Map<string, { content: string; is_error: boolean }> {
-  const results = new Map<string, { content: string; is_error: boolean }>();
+function collectToolResults(turns: Turn[]): Map<string, { content: string | ContentPart[]; is_error: boolean }> {
+  const results = new Map<string, { content: string | ContentPart[]; is_error: boolean }>();
   for (const turn of turns) {
     if (turn.role === "user" && Array.isArray(turn.content)) {
       for (const block of turn.content) {
@@ -132,7 +132,7 @@ function collectToolResults(turns: Turn[]): Map<string, { content: string; is_er
   return results;
 }
 
-function renderHistoryBlock(block: Block, toolResults: Map<string, { content: string; is_error: boolean }>): void {
+function renderHistoryBlock(block: Block, toolResults: Map<string, { content: string | ContentPart[]; is_error: boolean }>): void {
   switch (block.type) {
     case "thinking":
       renderer.addBlock({ type: "thinking", content: block.thinking });

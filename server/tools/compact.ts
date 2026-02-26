@@ -14,8 +14,6 @@ Your summary MUST preserve:
 5. Important context the assistant would need to continue work
 
 Be concise but comprehensive. Format as structured text.
-
-Conversation to summarize:
 `;
 
 function formatTurn(turn: Turn): string {
@@ -33,6 +31,7 @@ function formatTurn(turn: Turn): string {
         return `[tool_use]: ${block.name}\nInput: ${JSON.stringify(block.input)}`;
       case "tool_result":
         return `[tool_result]: ${block.content}`;
+      default: return "";
     }
   }).join("\n");
 }
@@ -40,7 +39,7 @@ function formatTurn(turn: Turn): string {
 export const { definition, executor } = createTool(
   {
     name: "compact",
-    description: "Summarize conversation history to free up context window. Preserves key decisions, file changes, and current task state.",
+    description: "Summarize conversation history to free up context window. Preserves key decisions, file changes, and current task state. Full chat history is kept for the UI — only the LLM view is compacted.",
     input_schema: {
       type: "object",
       properties: {},
@@ -48,20 +47,26 @@ export const { definition, executor } = createTool(
   },
   async (): Promise<ToolResult> => {
     const ctx = getToolContext();
-    const turns = ctx.session.getTurns();
+    const { toCompact, toKeep, previousSummary } = ctx.session.getTurnsForCompaction();
 
-    if (turns.length < 4) {
-      return { content: "Not enough conversation to compact (need at least 4 turns).", isError: false };
+    if (toCompact.length === 0) {
+      return { content: "Not enough conversation to compact.", isError: false };
     }
 
-    const formatted = turns.map(formatTurn).join("\n\n");
-    const client = createClient();
+    const formatted = toCompact.map(formatTurn).join("\n\n");
 
+    let prompt = COMPACT_PROMPT;
+    if (previousSummary) {
+      prompt += `\nPrevious session summary (incorporate and extend this):\n${previousSummary}\n\n`;
+    }
+    prompt += `New conversation to summarize:\n${formatted}`;
+
+    const client = createClient();
     const response = await client.chat({
       model: "fast",
       max_tokens: 4096,
       system: "You are a precise summarizer. Output structured text only.",
-      messages: [{ role: "user", content: COMPACT_PROMPT + formatted }],
+      messages: [{ role: "user", content: prompt }],
     });
 
     let summary = "";
@@ -73,12 +78,12 @@ export const { definition, executor } = createTool(
       return { content: "Failed to generate summary.", isError: true };
     }
 
-    ctx.session.compact(summary);
+    const { compactedCount, keptCount } = await ctx.session.compact(summary);
     ctx.invalidateAgent();
-    log(`Compacted ${turns.length} turns into summary`);
+    log(`Compacted ${compactedCount} turns into summary (${keptCount} kept, ${previousSummary ? "cumulative" : "first"} compaction)`);
 
     return {
-      content: `Compacted ${turns.length} turns. Summary preserved:\n\n${summary}`,
+      content: `Compacted ${compactedCount} turns. ${keptCount} recent turns kept for LLM context. Full history preserved for UI.`,
       isError: false,
     };
   },
