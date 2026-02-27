@@ -18,15 +18,15 @@ export const { definition, executor } = createTool(
       properties: {
         file_path: {
           type: "string",
-          description: "Path to file relative to project root (e.g., 'server/main.ts', 'client/index.html')"
+          description: "Path to file relative to project root (e.g., 'server/main.ts', 'client/index.html')",
         },
         offset: {
           type: "number",
-          description: "Optional: Line number to start reading from (1-indexed)"
+          description: "Optional: Line number to start reading from (1-indexed)",
         },
         limit: {
           type: "number",
-          description: "Optional: Number of lines to read (omit to read entire file)"
+          description: "Optional: Number of lines to read (omit to read entire file)",
         },
       },
       required: ["file_path"],
@@ -42,14 +42,10 @@ export const { definition, executor } = createTool(
     if (input.offset !== undefined || input.limit !== undefined) {
       const lines = content.split("\n");
       const startLine = Math.max(0, ((input.offset as number) || 1) - 1);
-      const endLine = input.limit !== undefined
-        ? startLine + (input.limit as number)
-        : lines.length;
+      const endLine = input.limit !== undefined ? startLine + (input.limit as number) : lines.length;
 
       const selectedLines = lines.slice(startLine, endLine);
-      content = selectedLines.map((line, idx) =>
-        `${startLine + idx + 1}: ${line}`
-      ).join("\n");
+      content = selectedLines.map((line, idx) => `${startLine + idx + 1}: ${line}`).join("\n");
 
       return { content, isError: false };
     }
@@ -61,5 +57,5 @@ export const { definition, executor } = createTool(
     }
 
     return { content, isError: false };
-  }
+  },
 );

@@ -1,14 +1,9 @@
-import { join } from "jsr:@std/path@^1.0.0";
-import { getToolDefinitions, executeTool } from "./tools-loader.ts";
-import { log, error } from "./logger.ts";
+import { join } from "@std/path";
+import { executeTool, getToolDefinitions } from "./tools-loader.ts";
+import { error, log } from "./logger.ts";
 import { CONFIG, PATHS } from "./config.ts";
 import type { Block, ContentPart } from "../shared/messages.ts";
-import {
-  createClient,
-  type LLMClient,
-  type ChatResponse,
-  type StreamEvent as LLMEvent,
-} from "think";
+import { type ChatResponse, createClient, type LLMClient } from "think";
 
 let cachedTools: Awaited<ReturnType<typeof getToolDefinitions>> | null = null;
 let cachedSystemPrompt: string | null = null;
@@ -30,9 +25,7 @@ async function getSystemPrompt(): Promise<string> {
   } catch {
     // No notes file — that's fine
   }
-  return notes
-    ? `${cachedSystemPrompt}\n\n<current_notes>\n${notes}\n</current_notes>`
-    : cachedSystemPrompt;
+  return notes ? `${cachedSystemPrompt}\n\n<current_notes>\n${notes}\n</current_notes>` : cachedSystemPrompt;
 }
 
 export function invalidateAgentCache(): void {
@@ -55,7 +48,7 @@ function truncateToolResult(content: string | ContentPart[]): string | ContentPa
     return content.slice(0, CONFIG.TOOL_RESULT_MAX_LENGTH) +
       "\n\n[Truncated. Use more specific queries or filters to narrow results.]";
   }
-  return content.map(part => {
+  return content.map((part) => {
     if (part.type === "text" && part.text.length > CONFIG.TOOL_RESULT_MAX_LENGTH) {
       return { ...part, text: part.text.slice(0, CONFIG.TOOL_RESULT_MAX_LENGTH) + "\n\n[Truncated.]" };
     }
@@ -73,7 +66,8 @@ export type StreamEvent =
   | { type: "server_tool_start"; toolId: string; toolName: string }
   | { type: "server_tool_result"; toolId: string; toolName: string; content: unknown }
   | { type: "turn_complete"; blocks: Block[] }
-  | { type: "token_usage"; usage: { inputTokens: number; outputTokens: number; totalTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number } }
+  | { type: "cost_update"; costMicrocents: number }
+  | { type: "budget_notice"; level: "warning" | "critical"; message: string }
   | { type: "complete" };
 
 export async function handleIncomingMessage(content: string, from: string): Promise<string> {
@@ -114,17 +108,17 @@ export async function* continueConversation(
     let currentText = "";
     let currentTool: { id: string; name: string; json: string } | null = null;
     let currentServerTool: { id: string; name: string; json: string } | null = null;
-    let inputTokens = 0;
-    let outputTokens = 0;
-    let cacheCreationInputTokens = 0;
-    let cacheReadInputTokens = 0;
+    let lastUsage: { cost_microcents?: number } | null = null;
+    let budgetNotice: { level: "warning" | "critical"; message: string } | null = null;
 
-    for await (const event of getClient().stream({
-      max_tokens: CONFIG.MAX_TOKENS,
-      system: systemPrompt,
-      messages: workingMessages,
-      tools,
-    })) {
+    for await (
+      const event of getClient().stream({
+        max_tokens: CONFIG.MAX_TOKENS,
+        system: systemPrompt,
+        messages: workingMessages,
+        tools,
+      })
+    ) {
       switch (event.type) {
         case "thinking":
           currentThinking += event.text;
@@ -179,7 +173,6 @@ export async function* continueConversation(
           break;
         }
 
-
         case "server_tool_start":
           if (currentText) {
             assistantBlocks.push({ type: "text", text: currentText });
@@ -231,10 +224,7 @@ export async function* continueConversation(
             yield { type: "text_complete", content: currentText };
             currentText = "";
           }
-          inputTokens = event.usage.input;
-          outputTokens = event.usage.output;
-          cacheCreationInputTokens = event.usage.cache_create;
-          cacheReadInputTokens = event.usage.cache_read;
+          lastUsage = event.usage;
           break;
 
         case "error":
@@ -251,6 +241,10 @@ export async function* continueConversation(
         case "pause_turn":
           pauseTurn = true;
           break;
+
+        case "budget_notice":
+          budgetNotice = { level: event.level, message: event.message };
+          break;
       }
     }
 
@@ -260,11 +254,11 @@ export async function* continueConversation(
     if (pendingTools.length > 0) {
       const toolResultBlocks: Block[] = [];
       const results = await Promise.allSettled(
-        pendingTools.map(t =>
+        pendingTools.map((t) =>
           t.parseError
             ? Promise.reject(new Error(t.parseError))
             : executeTool(t.name, t.input as Record<string, unknown>)
-        )
+        ),
       );
 
       for (let i = 0; i < pendingTools.length; i++) {
@@ -282,16 +276,19 @@ export async function* continueConversation(
       yield { type: "turn_complete", blocks: toolResultBlocks };
     }
 
-    yield {
-      type: "token_usage",
-      usage: {
-        inputTokens,
-        outputTokens,
-        totalTokens: inputTokens + outputTokens,
-        cacheCreationInputTokens,
-        cacheReadInputTokens,
-      },
-    };
+    if (lastUsage) {
+      yield { type: "cost_update", costMicrocents: lastUsage.cost_microcents ?? 0 };
+    }
+    if (budgetNotice) {
+      yield { type: "budget_notice", level: budgetNotice.level, message: budgetNotice.message };
+      workingMessages.push({
+        role: "user",
+        content: [{
+          type: "text",
+          text: `<budget_notice level="${budgetNotice.level}">${budgetNotice.message}</budget_notice>`,
+        }],
+      });
+    }
 
     if (pauseTurn) continue;
 

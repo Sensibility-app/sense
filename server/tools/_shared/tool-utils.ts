@@ -57,8 +57,10 @@ function validateInput(input: Record<string, unknown>, schema: ToolDefinition["i
 }
 
 export function createTool(
-  definition: Omit<ToolDefinition, "input_schema"> & { input_schema: Omit<ToolDefinition["input_schema"], "$schema" | "additionalProperties"> },
-  executor: ToolExecutor
+  definition: Omit<ToolDefinition, "input_schema"> & {
+    input_schema: Omit<ToolDefinition["input_schema"], "$schema" | "additionalProperties">;
+  },
+  executor: ToolExecutor,
 ): ToolModule {
   const fullDefinition: ToolDefinition = {
     ...definition,
@@ -84,19 +86,54 @@ export function createTool(
 }
 
 export const BINARY_FILE_EXTENSIONS = [
-  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'svg',
-  'pdf', 'zip', 'tar', 'gz', 'bz2', 'xz', 'rar', '7z',
-  'exe', 'dll', 'so', 'dylib',
-  'mp3', 'wav', 'ogg', 'flac', 'aac',
-  'mp4', 'avi', 'mkv', 'mov', 'wmv',
-  'ttf', 'otf', 'woff', 'woff2',
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "bmp",
+  "ico",
+  "webp",
+  "svg",
+  "pdf",
+  "zip",
+  "tar",
+  "gz",
+  "bz2",
+  "xz",
+  "rar",
+  "7z",
+  "exe",
+  "dll",
+  "so",
+  "dylib",
+  "mp3",
+  "wav",
+  "ogg",
+  "flac",
+  "aac",
+  "mp4",
+  "avi",
+  "mkv",
+  "mov",
+  "wmv",
+  "ttf",
+  "otf",
+  "woff",
+  "woff2",
 ];
 
 export const SKIP_DIRECTORY_PATTERNS = [
-  /node_modules/, /\.git/, /sessions/, /dist/, /build/, /coverage/, /\.next/, /\.cache/,
+  /node_modules/,
+  /\.git/,
+  /sessions/,
+  /dist/,
+  /build/,
+  /coverage/,
+  /\.next/,
+  /\.cache/,
 ];
 
 export function isBinaryFile(filePath: string): boolean {
-  const ext = filePath.split('.').pop()?.toLowerCase();
+  const ext = filePath.split(".").pop()?.toLowerCase();
   return ext ? BINARY_FILE_EXTENSIONS.includes(ext) : false;
 }

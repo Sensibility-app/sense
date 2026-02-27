@@ -41,7 +41,8 @@ function applyEdit(
     return {
       content,
       replacements: 0,
-      error: `Found ${matchCount} matches of string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, provide more context to uniquely identify the instance.`,
+      error:
+        `Found ${matchCount} matches of string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, provide more context to uniquely identify the instance.`,
     };
   }
 
@@ -74,8 +75,7 @@ export const { definition, executor } = createTool(
         },
         replace_all: {
           type: "boolean",
-          description:
-            "Replace all occurrences instead of requiring unique match (default: false)",
+          description: "Replace all occurrences instead of requiring unique match (default: false)",
         },
         edits: {
           type: "array",
@@ -151,10 +151,9 @@ export const { definition, executor } = createTool(
 
     await Deno.writeTextFile(path, content);
 
-    const msg =
-      edits.length === 1
-        ? `Successfully edited ${filePath} (${totalReplacements} replacement${totalReplacements > 1 ? "s" : ""})`
-        : `Successfully edited ${filePath} (${edits.length} edits, ${totalReplacements} total replacements)`;
+    const msg = edits.length === 1
+      ? `Successfully edited ${filePath} (${totalReplacements} replacement${totalReplacements > 1 ? "s" : ""})`
+      : `Successfully edited ${filePath} (${edits.length} edits, ${totalReplacements} total replacements)`;
     return { content: msg, isError: false };
   },
 );

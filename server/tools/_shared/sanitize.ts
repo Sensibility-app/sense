@@ -1,4 +1,4 @@
-import { join, normalize } from "jsr:@std/path@^1.0.0";
+import { join, normalize } from "@std/path";
 
 const BASE_DIR = Deno.cwd();
 
@@ -14,7 +14,7 @@ export function resolvePath(path: string): string {
 export const sanitizePath = resolvePath;
 
 export function resolveSearchPath(path?: string): string {
-  return (!path || path === '/') ? BASE_DIR : resolvePath(path);
+  return (!path || path === "/") ? BASE_DIR : resolvePath(path);
 }
 
 export function sanitizeErrorMessage(error: unknown): string {

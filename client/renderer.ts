@@ -18,7 +18,7 @@ export class Renderer {
   constructor(
     private output: HTMLElement,
     private submitBtn: HTMLElement,
-    private stopBtn: HTMLElement
+    private stopBtn: HTMLElement,
   ) {
     this.configureMarked();
   }
@@ -30,14 +30,14 @@ export class Renderer {
           breaks: true,
           gfm: true,
           headerIds: false,
-          mangle: false
+          mangle: false,
         });
-      } catch {}
+      } catch { /* marked config may fail before library loads */ }
     };
-    if ((window as unknown as { marked?: unknown }).marked) {
+    if ((globalThis as unknown as { marked?: unknown }).marked) {
       configure();
     } else {
-      window.addEventListener("DOMContentLoaded", configure);
+      globalThis.addEventListener("DOMContentLoaded", configure);
     }
   }
 
@@ -192,7 +192,6 @@ export class Renderer {
     this.output.appendChild(el);
   }
 
-
   private renderToolResultContent(container: HTMLElement, content: string | ContentPart[]): void {
     if (typeof content === "string") {
       const pre = document.createElement("pre");
@@ -249,8 +248,8 @@ export class Renderer {
   }
 
   saveScrollPosition(): void {
-    sessionStorage.setItem("scrollPosition", String(window.scrollY || document.documentElement.scrollTop));
-    
+    sessionStorage.setItem("scrollPosition", String(globalThis.scrollY || document.documentElement.scrollTop));
+
     const openDetails: number[] = [];
     this.output.querySelectorAll("details").forEach((el, i) => {
       if (el.open) openDetails.push(i);
@@ -271,7 +270,7 @@ export class Renderer {
     const scrollPos = sessionStorage.getItem("scrollPosition");
     if (scrollPos !== null) {
       requestAnimationFrame(() => {
-        window.scrollTo({ top: Number(scrollPos) });
+        globalThis.scrollTo({ top: Number(scrollPos) });
         sessionStorage.removeItem("scrollPosition");
       });
     }

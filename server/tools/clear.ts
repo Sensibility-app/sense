@@ -14,7 +14,7 @@ export const { definition, executor } = createTool(
   },
   async (): Promise<ToolResult> => {
     const { session, broadcast } = getToolContext();
-    
+
     await archiveCurrentSession();
     await session.clear();
 
@@ -24,5 +24,5 @@ export const { definition, executor } = createTool(
       content: "Session cleared. Refreshing the page...",
       isError: false,
     };
-  }
+  },
 );

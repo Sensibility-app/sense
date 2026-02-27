@@ -1,8 +1,8 @@
-import { transpile } from "jsr:@deno/emit";
-import { crypto } from "jsr:@std/crypto@^1.0.0";
-import { encodeHex } from "jsr:@std/encoding@^1.0.0/hex";
-import { log, error } from "./logger.ts";
-import { join, normalize } from "jsr:@std/path@^1.0.0";
+import { transpile } from "@deno/emit";
+import { crypto } from "@std/crypto";
+import { encodeHex } from "@std/encoding/hex";
+import { error, log } from "./logger.ts";
+import { join, normalize } from "@std/path";
 
 const BASE_DIR = Deno.cwd();
 const cache = new Map<string, { sourceHash: string; transpiledCode: string }>();
@@ -61,8 +61,9 @@ async function transpileFile(filepath: string): Promise<{ code: string; fromCach
 }
 
 export async function serveStaticFile(pathname: string): Promise<Response> {
-  const isTranspilable = (pathname.startsWith("/client/") || pathname.startsWith("/shared/")) && pathname.endsWith(".js");
-  
+  const isTranspilable = (pathname.startsWith("/client/") || pathname.startsWith("/shared/")) &&
+    pathname.endsWith(".js");
+
   if (isTranspilable) {
     try {
       const tsPath = `.${pathname.replace(/\.js$/, ".ts")}`;
@@ -91,14 +92,21 @@ async function serveFile(path: string): Promise<Response> {
   try {
     const ext = path.split(".").pop();
     const contentTypes: Record<string, string> = {
-      html: "text/html", js: "text/javascript", css: "text/css", json: "application/json",
-      png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", svg: "image/svg+xml", ico: "image/x-icon"
+      html: "text/html",
+      js: "text/javascript",
+      css: "text/css",
+      json: "application/json",
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      svg: "image/svg+xml",
+      ico: "image/x-icon",
     };
     const contentType = contentTypes[ext || ""] || "text/plain";
 
     if (ext === "html") {
       const html = await Deno.readTextFile(path);
-      const rewritten = html.replace(/(<script[^>]+src=["'])([^"']+)\.ts(["'][^>]*>)/g, '$1$2.js$3');
+      const rewritten = html.replace(/(<script[^>]+src=["'])([^"']+)\.ts(["'][^>]*>)/g, "$1$2.js$3");
       return new Response(rewritten, {
         headers: { "Content-Type": contentType, "Cache-Control": "no-cache, no-store, must-revalidate" },
       });

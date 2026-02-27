@@ -1,11 +1,12 @@
 import { createTool, type ToolResult } from "./_shared/tool-utils.ts";
-import { Readability } from "npm:@mozilla/readability@0.5.0";
-import { JSDOM } from "npm:jsdom@23.0.1";
+import { Readability } from "@mozilla/readability";
+import { JSDOM } from "jsdom";
 
 export const { definition, executor } = createTool(
   {
     name: "fetch_url",
-    description: "Fetch content from a URL. Can retrieve web pages, API responses, or any HTTP-accessible content. Returns the response text.",
+    description:
+      "Fetch content from a URL. Can retrieve web pages, API responses, or any HTTP-accessible content. Returns the response text.",
     input_schema: {
       type: "object",
       properties: {
@@ -36,9 +37,9 @@ export const { definition, executor } = createTool(
   },
   async (input): Promise<ToolResult> => {
     try {
-      const { url, method = "GET", headers, body, extract_content = false } = input as { 
-        url: string; 
-        method?: string; 
+      const { url, method = "GET", headers, body, extract_content = false } = input as {
+        url: string;
+        method?: string;
         headers?: Record<string, string>;
         body?: string;
         extract_content?: boolean;
@@ -73,14 +74,14 @@ export const { definition, executor } = createTool(
           const dom = new JSDOM(text, { url });
           const reader = new Readability(dom.window.document);
           const article = reader.parse();
-          
+
           if (article) {
             let content = `# ${article.title}\n\n`;
             if (article.byline) {
               content += `By ${article.byline}\n\n`;
             }
             content += article.textContent;
-            
+
             return {
               content,
               isError: false,
@@ -111,5 +112,5 @@ export const { definition, executor } = createTool(
         isError: true,
       };
     }
-  }
+  },
 );

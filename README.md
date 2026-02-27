@@ -25,7 +25,6 @@ Every tool is also a `/command`. Type `/help` to see what's available.
 | `browse` | Browser automation via headless Chrome |
 | `talk` | Send messages to sibling Sense apps |
 | `notes` | Persistent long-term memory (survives restarts and compaction) |
-| `compact` | Summarize conversation to save context |
 | `clear` | Reset the session |
 | `reload_server` | Restart the server after backend changes |
 | `reload_client` | Push client updates to the browser |

@@ -4,8 +4,7 @@ import { createTool, type ToolResult } from "./_shared/tool-utils.ts";
 export const { definition, executor } = createTool(
   {
     name: "browse",
-    description:
-      "Control a headless browser. Actions: navigate (go to URL), view_self (open your own app), " +
+    description: "Control a headless browser. Actions: navigate (go to URL), view_self (open your own app), " +
       "text (extract page text), snapshot (accessibility tree), screenshot (visual JPEG capture — you can see the image), " +
       "click/type/fill/press/hover/scroll/select (interact with elements by ref), " +
       "evaluate (run JS expression in page — no 'return' statements, use JSON.stringify() for objects), tabs (list open tabs). " +
@@ -19,9 +18,20 @@ export const { definition, executor } = createTool(
           description:
             "Browser action: navigate, view_self, text, snapshot, screenshot, click, type, fill, press, hover, scroll, select, evaluate, tabs",
           enum: [
-            "navigate", "view_self", "text", "snapshot", "screenshot",
-            "click", "type", "fill", "press", "hover", "scroll", "select",
-            "evaluate", "tabs",
+            "navigate",
+            "view_self",
+            "text",
+            "snapshot",
+            "screenshot",
+            "click",
+            "type",
+            "fill",
+            "press",
+            "hover",
+            "scroll",
+            "select",
+            "evaluate",
+            "tabs",
           ],
         },
         url: {
@@ -46,7 +56,8 @@ export const { definition, executor } = createTool(
         },
         expression: {
           type: "string",
-          description: "JavaScript expression to evaluate in page (for 'evaluate' action — NO 'return' statements, use JSON.stringify() to return objects)",
+          description:
+            "JavaScript expression to evaluate in page (for 'evaluate' action — NO 'return' statements, use JSON.stringify() to return objects)",
         },
         filter: {
           type: "string",
@@ -152,7 +163,9 @@ export const { definition, executor } = createTool(
       case "tabs": {
         const result = await browse.tabs();
         if (result.tabs.length === 0) return { content: "No open tabs", isError: false };
-        const lines = result.tabs.map((t: { id: string; url: string; title: string }) => `  [${t.id}] ${t.title} — ${t.url}`);
+        const lines = result.tabs.map((t: { id: string; url: string; title: string }) =>
+          `  [${t.id}] ${t.title} — ${t.url}`
+        );
         return { content: `Open tabs:\n${lines.join("\n")}`, isError: false };
       }
       case "screenshot": {

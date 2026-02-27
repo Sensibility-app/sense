@@ -5,26 +5,28 @@
  * with file paths and line numbers.
  */
 
-import { walk } from "jsr:@std/fs@^1.0.0";
-import { relative } from "jsr:@std/path@^1.0.0";
-import { createTool, type ToolResult, isBinaryFile, SKIP_DIRECTORY_PATTERNS } from "../tools/_shared/tool-utils.ts";
+import { walk } from "@std/fs";
+import { relative } from "@std/path";
+import { createTool, isBinaryFile, SKIP_DIRECTORY_PATTERNS, type ToolResult } from "../tools/_shared/tool-utils.ts";
 import { getBaseDir, resolveSearchPath } from "../tools/_shared/sanitize.ts";
 import { CONFIG } from "../config.ts";
 
 export const { definition, executor } = createTool(
   {
     name: "search_files",
-    description: "Search for a text pattern in files. Returns matching lines with file paths and line numbers. Supports both literal strings and regex patterns. Useful for finding where code, text, or patterns appear in the codebase.",
+    description:
+      "Search for a text pattern in files. Returns matching lines with file paths and line numbers. Supports both literal strings and regex patterns. Useful for finding where code, text, or patterns appear in the codebase.",
     input_schema: {
       type: "object",
       properties: {
         pattern: {
           type: "string",
-          description: "The text pattern to search for (supports regex patterns)"
+          description: "The text pattern to search for (supports regex patterns)",
         },
         search_path: {
           type: "string",
-          description: "Path to search within project, relative to project root (e.g., 'server', 'client', or omit for entire project)"
+          description:
+            "Path to search within project, relative to project root (e.g., 'server', 'client', or omit for entire project)",
         },
       },
       required: ["pattern"],
@@ -41,7 +43,7 @@ export const { definition, executor } = createTool(
       regex = new RegExp(pattern, "i"); // Case insensitive
     } catch {
       // If regex fails, treat as literal string
-      const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       regex = new RegExp(escaped, "i");
     }
 
@@ -50,11 +52,13 @@ export const { definition, executor } = createTool(
     let outputSize = 0;
 
     // Walk directory tree and search files
-    for await (const entry of walk(absoluteSearchPath, {
-      includeFiles: true,
-      includeDirs: false,
-      skip: SKIP_DIRECTORY_PATTERNS,
-    })) {
+    for await (
+      const entry of walk(absoluteSearchPath, {
+        includeFiles: true,
+        includeDirs: false,
+        skip: SKIP_DIRECTORY_PATTERNS,
+      })
+    ) {
       // Skip binary files
       if (isBinaryFile(entry.path)) {
         continue;
@@ -62,7 +66,7 @@ export const { definition, executor } = createTool(
 
       try {
         const content = await Deno.readTextFile(entry.path);
-        const lines = content.split('\n');
+        const lines = content.split("\n");
 
         for (let i = 0; i < lines.length; i++) {
           if (regex.test(lines[i])) {
@@ -107,8 +111,8 @@ export const { definition, executor } = createTool(
     }
 
     return {
-      content: matches.join('\n'),
+      content: matches.join("\n"),
       isError: false,
     };
-  }
+  },
 );

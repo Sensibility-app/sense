@@ -1,4 +1,4 @@
-import { discover, sendMessage, self } from "talk";
+import { discover, self, sendMessage } from "talk";
 import { createTool, type ToolResult } from "./_shared/tool-utils.ts";
 
 export const { definition, executor } = createTool(
@@ -32,7 +32,8 @@ export const { definition, executor } = createTool(
       const apps = await discover();
       if (apps.length === 0) {
         return {
-          content: "No sibling apps found in /run/apps/. You may be running in local dev mode, or you're the only app for this user.",
+          content:
+            "No sibling apps found in /run/apps/. You may be running in local dev mode, or you're the only app for this user.",
           isError: false,
         };
       }

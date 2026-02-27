@@ -5,24 +5,25 @@
  * Automatically creates parent directories if needed.
  */
 
-import { dirname } from "jsr:@std/path@^1.0.0";
+import { dirname } from "@std/path";
 import { createTool, type ToolResult } from "../tools/_shared/tool-utils.ts";
 import { sanitizePath } from "../tools/_shared/sanitize.ts";
 
 export const { definition, executor } = createTool(
   {
     name: "create_file",
-    description: "Create a new file in the project directory (fails if file already exists). Automatically creates parent directories if needed.",
+    description:
+      "Create a new file in the project directory (fails if file already exists). Automatically creates parent directories if needed.",
     input_schema: {
       type: "object",
       properties: {
         file_path: {
           type: "string",
-          description: "Path to new file relative to project root (e.g., 'server/tools/new_tool.ts')"
+          description: "Path to new file relative to project root (e.g., 'server/tools/new_tool.ts')",
         },
         file_contents: {
           type: "string",
-          description: "Content to write to the new file"
+          description: "Content to write to the new file",
         },
       },
       required: ["file_path", "file_contents"],
@@ -49,5 +50,5 @@ export const { definition, executor } = createTool(
     await Deno.writeTextFile(path, input.file_contents as string);
 
     return { content: `Successfully created ${input.file_path}`, isError: false };
-  }
+  },
 );

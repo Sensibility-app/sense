@@ -18,5 +18,5 @@ export const { definition, executor } = createTool(
       content: "Browser refresh triggered.",
       isError: false,
     };
-  }
+  },
 );

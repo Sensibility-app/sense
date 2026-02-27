@@ -5,7 +5,8 @@ import { getToolContext } from "../tools-loader.ts";
 export const { definition, executor } = createTool(
   {
     name: "reload_server",
-    description: "Restart the server after editing server-side TypeScript files (server/*.ts except tools). Validates syntax first. Task auto-resumes after restart.",
+    description:
+      "Restart the server after editing server-side TypeScript files (server/*.ts except tools). Validates syntax first. Task auto-resumes after restart.",
     input_schema: {
       type: "object",
       properties: {},
@@ -14,7 +15,7 @@ export const { definition, executor } = createTool(
   },
   async (): Promise<ToolResult> => {
     log("reload_server: Validating syntax...");
-    
+
     const check = await new Deno.Command("deno", {
       args: ["check", "server/main.ts"],
       stdout: "piped",
@@ -30,7 +31,7 @@ export const { definition, executor } = createTool(
     }
 
     log("reload_server: Validation passed, scheduling restart...");
-    
+
     setTimeout(async () => {
       log("reload_server: Saving session before restart...");
       await getToolContext().session.shutdown();
@@ -42,5 +43,5 @@ export const { definition, executor } = createTool(
       content: "Validation passed. Server restarting... task will auto-resume.",
       isError: false,
     };
-  }
+  },
 );

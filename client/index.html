@@ -1,30 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Sense">
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Sense">
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 
-  <link rel="apple-touch-icon" href="icon-192.png">
-  <title>Sense</title>
-  <link rel="stylesheet" href="client/styles.css">
-  <link rel="stylesheet" href="client/messages.css">
-  <link rel="stylesheet" href="client/markdown.css">
-</head>
-<body>
-  <main id="output"></main>
-  <form id="taskForm">
-    <textarea id="taskInput" autofocus></textarea>
-    <button type="submit" id="submitBtn">Send</button>
-    <button type="button" id="stopBtn" hidden>Stop</button>
-  </form>
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <title>Sense</title>
+    <link rel="stylesheet" href="client/styles.css">
+    <link rel="stylesheet" href="client/messages.css">
+    <link rel="stylesheet" href="client/markdown.css">
+  </head>
+  <body>
+    <main id="output"></main>
+    <form id="taskForm">
+      <textarea id="taskInput" autofocus></textarea>
+      <button type="submit" id="submitBtn">Send</button>
+      <button type="button" id="stopBtn" hidden>Stop</button>
+    </form>
 
-  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js" defer></script>
-  <script type="module" src="client/client.ts"></script>
-</body>
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js" defer></script>
+    <script type="module" src="client/client.ts"></script>
+  </body>
 </html>

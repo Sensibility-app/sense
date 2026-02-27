@@ -13,7 +13,7 @@ export function parseCommand(input: string): ParsedCommand | null {
 
   const withoutSlash = trimmed.slice(1);
   const firstSpace = withoutSlash.indexOf(" ");
-  
+
   if (firstSpace === -1) {
     return { name: withoutSlash, args: {} };
   }

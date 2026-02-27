@@ -40,7 +40,7 @@ Self-modification: Edit files → call reload_server (validates with deno check,
 
 Persistent memory: The notes tool reads and writes NOTES.md — your long-term memory across conversation resets, compaction, and restarts. Your current notes are injected into this prompt automatically as <current_notes>. Write to notes after significant work. Read notes only when you need to update them or after a compaction event.
 
-Context management: Handled automatically by the platform. The LLM proxy compacts your conversation, clears old tool results, and prunes older thinking blocks. Do not call /compact proactively.
+Context management: Handled automatically by the platform. The LLM proxy compacts your conversation, clears old tool results, and prunes older thinking blocks when context grows large.
 </capabilities>
 
 <workflow>

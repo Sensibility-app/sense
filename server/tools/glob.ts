@@ -8,11 +8,10 @@
 
 import { createTool, type ToolResult } from "../tools/_shared/tool-utils.ts";
 import { getBaseDir, resolveSearchPath } from "../tools/_shared/sanitize.ts";
-import { expandGlob } from "jsr:@std/fs@1.0.21/expand-glob";
-import { relative } from "jsr:@std/path@1.1.4/relative";
-import { join } from "jsr:@std/path@1.1.4/join";
-import { compile } from "jsr:@cfa/gitignore-parser";
-
+import { expandGlob } from "@std/fs/expand-glob";
+import { relative } from "@std/path/relative";
+import { join } from "@std/path/join";
+import { compile } from "@cfa/gitignore-parser";
 
 /**
  * Load and parse .gitignore files
@@ -34,21 +33,23 @@ async function loadGitignore(baseDir: string) {
 export const { definition, executor } = createTool(
   {
     name: "glob",
-    description: "Find files matching glob patterns. Supports *.ts, **/*.js, etc. Returns paths sorted by modification time. Respects .gitignore by default.",
+    description:
+      "Find files matching glob patterns. Supports *.ts, **/*.js, etc. Returns paths sorted by modification time. Respects .gitignore by default.",
     input_schema: {
       type: "object",
       properties: {
         pattern: {
           type: "string",
-          description: "Glob pattern to match (e.g., '*.ts', '**/*.js', 'server/**/*.ts')"
+          description: "Glob pattern to match (e.g., '*.ts', '**/*.js', 'server/**/*.ts')",
         },
         path: {
           type: "string",
-          description: "Optional: Base directory to search from (default: project root). Example: 'server'"
+          description: "Optional: Base directory to search from (default: project root). Example: 'server'",
         },
         include_gitignored: {
           type: "boolean",
-          description: "Optional: Include files that are gitignored (default: false). Set to true to search everything including node_modules, dist, .env, etc."
+          description:
+            "Optional: Include files that are gitignored (default: false). Set to true to search everything including node_modules, dist, .env, etc.",
         },
       },
       required: ["pattern"],
@@ -64,11 +65,13 @@ export const { definition, executor } = createTool(
 
     const matches: Array<{ path: string; mtime: number }> = [];
 
-    for await (const entry of expandGlob(input.pattern as string, {
-      root: searchPath,
-      includeDirs: false,
-      globstar: true,
-    })) {
+    for await (
+      const entry of expandGlob(input.pattern as string, {
+        root: searchPath,
+        includeDirs: false,
+        globstar: true,
+      })
+    ) {
       const stat = await Deno.stat(entry.path);
       const relativePath = relative(baseDir, entry.path);
 
@@ -92,12 +95,13 @@ export const { definition, executor } = createTool(
       };
     }
 
-    const paths = matches.map(m => m.path).join("\n");
-    const summary = "Found " + matches.length + " file" + (matches.length === 1 ? '' : 's') + " matching '" + input.pattern + "':\n" + paths;
+    const paths = matches.map((m) => m.path).join("\n");
+    const summary = "Found " + matches.length + " file" + (matches.length === 1 ? "" : "s") + " matching '" +
+      input.pattern + "':\n" + paths;
 
     return {
       content: summary,
       isError: false,
     };
-  }
+  },
 );

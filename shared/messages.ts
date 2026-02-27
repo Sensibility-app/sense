@@ -30,9 +30,30 @@ export interface ToolResultBlock {
 
 /** Citation attached to a text or server tool result block */
 export type Citation =
-  | { type: "char_location"; cited_text: string; document_index: number; document_title?: string; start_char_index: number; end_char_index: number }
-  | { type: "page_location"; cited_text: string; document_index: number; document_title?: string; start_page_number: number; end_page_number: number }
-  | { type: "content_block_location"; cited_text: string; document_index: number; document_title?: string; start_block_index: number; end_block_index: number }
+  | {
+    type: "char_location";
+    cited_text: string;
+    document_index: number;
+    document_title?: string;
+    start_char_index: number;
+    end_char_index: number;
+  }
+  | {
+    type: "page_location";
+    cited_text: string;
+    document_index: number;
+    document_title?: string;
+    start_page_number: number;
+    end_page_number: number;
+  }
+  | {
+    type: "content_block_location";
+    cited_text: string;
+    document_index: number;
+    document_title?: string;
+    start_block_index: number;
+    end_block_index: number;
+  }
   | { type: "web_search_result_location"; url: string; title: string; encrypted_index: string; cited_text: string };
 
 export interface ServerToolUseBlock {
@@ -58,7 +79,15 @@ export interface CompactionBlock {
   type: "compaction";
   content: string;
 }
-export type Block = ThinkingBlock | TextBlock | ToolUseBlock | ToolResultBlock | CompactionBlock | ServerToolUseBlock | WebSearchResultBlock | WebFetchResultBlock;
+export type Block =
+  | ThinkingBlock
+  | TextBlock
+  | ToolUseBlock
+  | ToolResultBlock
+  | CompactionBlock
+  | ServerToolUseBlock
+  | WebSearchResultBlock
+  | WebFetchResultBlock;
 // Turn = one message in conversation (LLM native format + our metadata)
 export interface Turn {
   id: string;
@@ -80,13 +109,9 @@ export interface ToolInfo {
   }>;
 }
 
-// Token tracking
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  cacheCreationInputTokens: number;
-  cacheReadInputTokens: number;
+// Cost tracking
+export interface CostInfo {
+  sessionCostMicrocents: number;
 }
 
 // Server → Client
@@ -99,8 +124,9 @@ export type ServerMessage =
   | { type: "server_tool_start"; taskId: string; toolId: string; toolName: string }
   | { type: "server_tool_result"; taskId: string; toolId: string; toolName: string; content: unknown }
   | { type: "turn_complete"; taskId: string }
-  | { type: "token_usage"; usage: TokenUsage }
+  | { type: "cost_update"; cost: CostInfo }
   | { type: "task_complete"; taskId: string }
   | { type: "system"; content: string; level: "info" | "error" | "success" }
-  | { type: "session_info"; history: Turn[]; tokenUsage: TokenUsage; tools: ToolInfo[] }
+  | { type: "session_info"; history: Turn[]; cost: CostInfo; tools: ToolInfo[] }
+  | { type: "budget_notice"; level: "warning" | "critical"; message: string }
   | { type: "reload_page"; reason: string };

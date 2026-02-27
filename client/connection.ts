@@ -11,7 +11,7 @@ export class Connection {
 
   constructor(formEl: HTMLElement) {
     this.formEl = formEl;
-    this.base = window.location.pathname.replace(/\/$/, "");
+    this.base = globalThis.location.pathname.replace(/\/$/, "");
   }
 
   connect(): void {

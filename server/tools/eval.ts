@@ -11,13 +11,15 @@ import { CONFIG } from "../config.ts";
 export const { definition, executor } = createTool(
   {
     name: "eval",
-    description: "Execute TypeScript/JavaScript code with access to Deno APIs (Deno.readDir, Deno.readTextFile, etc.). Code runs with server's permission context.",
+    description:
+      "Execute TypeScript/JavaScript code with access to Deno APIs (Deno.readDir, Deno.readTextFile, etc.). Code runs with server's permission context.",
     input_schema: {
       type: "object",
       properties: {
         code: {
           type: "string",
-          description: "TypeScript/JavaScript code to execute. Can use await, Deno APIs, return values. Example: 'return await Deno.readTextFile(\"/server/main.ts\")'"
+          description:
+            "TypeScript/JavaScript code to execute. Can use await, Deno APIs, return values. Example: 'return await Deno.readTextFile(\"/server/main.ts\")'",
         },
       },
       required: ["code"],
@@ -25,11 +27,14 @@ export const { definition, executor } = createTool(
   },
   async (input): Promise<ToolResult> => {
     // Create async function from code
-    const asyncFn = new Function("Deno", `
+    const asyncFn = new Function(
+      "Deno",
+      `
       return (async () => {
         ${input.code}
       })();
-    `);
+    `,
+    );
 
     const result = await Promise.race([
       asyncFn(Deno),
@@ -47,5 +52,5 @@ export const { definition, executor } = createTool(
       content: output,
       isError: false,
     };
-  }
+  },
 );

@@ -1,7 +1,7 @@
 import { Renderer } from "./renderer.ts";
 import { Connection } from "./connection.ts";
 import { isCommand, parseCommand } from "./command-parser.ts";
-import type { ServerMessage, Turn, Block, ContentPart } from "../shared/messages.ts";
+import type { Block, ContentPart, ServerMessage, Turn } from "../shared/messages.ts";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -52,7 +52,7 @@ updateMainPadding();
 
 $("stopBtn").addEventListener("click", () => connection.stopTask());
 
-window.addEventListener("beforeunload", () => connection.disconnect());
+globalThis.addEventListener("beforeunload", () => connection.disconnect());
 
 connection.connect();
 
@@ -85,7 +85,12 @@ function handleMessage(message: ServerMessage): void {
       break;
 
     case "tool_result":
-      renderer.addBlock({ type: "tool_result", tool_use_id: message.toolId, content: message.toolOutput, is_error: message.toolError });
+      renderer.addBlock({
+        type: "tool_result",
+        tool_use_id: message.toolId,
+        content: message.toolOutput,
+        is_error: message.toolError,
+      });
       break;
 
     case "server_tool_start":
@@ -102,7 +107,7 @@ function handleMessage(message: ServerMessage): void {
 
     case "reload_page":
       renderer.saveScrollPosition();
-      setTimeout(() => window.location.reload(), 100);
+      setTimeout(() => globalThis.location.reload(), 100);
       break;
   }
 }
@@ -136,7 +141,10 @@ function collectToolResults(turns: Turn[]): Map<string, { content: string | Cont
   return results;
 }
 
-function renderHistoryBlock(block: Block, toolResults: Map<string, { content: string | ContentPart[]; is_error: boolean }>): void {
+function renderHistoryBlock(
+  block: Block,
+  toolResults: Map<string, { content: string | ContentPart[]; is_error: boolean }>,
+): void {
   switch (block.type) {
     case "thinking":
       renderer.addBlock({ type: "thinking", content: block.thinking });
@@ -148,7 +156,12 @@ function renderHistoryBlock(block: Block, toolResults: Map<string, { content: st
       renderer.addBlock({ type: "tool_use", id: block.id, name: block.name, input: block.input });
       const result = toolResults.get(block.id);
       if (result) {
-        renderer.addBlock({ type: "tool_result", tool_use_id: block.id, content: result.content, is_error: result.is_error });
+        renderer.addBlock({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: result.content,
+          is_error: result.is_error,
+        });
       }
       break;
     }

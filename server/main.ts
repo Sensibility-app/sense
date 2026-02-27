@@ -1,9 +1,9 @@
-import { continueConversation, invalidateAgentCache, handleIncomingMessage } from "./agent.ts";
-import { PersistentSession, createTurn } from "./persistent-session.ts";
+import { continueConversation, handleIncomingMessage, invalidateAgentCache } from "./agent.ts";
+import { createTurn, PersistentSession } from "./persistent-session.ts";
 import { CONFIG } from "./config.ts";
-import { log, error } from "./logger.ts";
+import { error, log } from "./logger.ts";
 import { serveStaticFile } from "./file-server.ts";
-import { setToolContext, invalidateToolsCache, loadTools, executeTool } from "./tools-loader.ts";
+import { executeTool, invalidateToolsCache, loadTools, setToolContext } from "./tools-loader.ts";
 import type { ServerMessage, ToolInfo } from "../shared/messages.ts";
 import type { StreamEvent } from "./agent.ts";
 
@@ -45,17 +45,6 @@ let currentText = "";
 let stopRequested = false;
 let runningTask: Promise<void> | null = null;
 
-function getTokenUsage() {
-  const usage = session.getTokenUsage();
-  return {
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    totalTokens: usage.totalTokens,
-    cacheCreationInputTokens: usage.cacheCreationInputTokens,
-    cacheReadInputTokens: usage.cacheReadInputTokens,
-  };
-}
-
 function handleStreamEvent(event: StreamEvent): void {
   const taskId = currentTaskId || "unknown";
   switch (event.type) {
@@ -68,16 +57,34 @@ function handleStreamEvent(event: StreamEvent): void {
       broadcast({ type: "text_delta", taskId, content: event.content });
       break;
     case "tool_use":
-      broadcast({ type: "tool_use", taskId, toolId: event.toolId, toolName: event.toolName, toolInput: event.toolInput });
+      broadcast({
+        type: "tool_use",
+        taskId,
+        toolId: event.toolId,
+        toolName: event.toolName,
+        toolInput: event.toolInput,
+      });
       break;
     case "tool_result":
-      broadcast({ type: "tool_result", taskId, toolId: event.toolId, toolOutput: event.toolOutput, toolError: event.toolError });
+      broadcast({
+        type: "tool_result",
+        taskId,
+        toolId: event.toolId,
+        toolOutput: event.toolOutput,
+        toolError: event.toolError,
+      });
       break;
     case "server_tool_start":
       broadcast({ type: "server_tool_start", taskId, toolId: event.toolId, toolName: event.toolName });
       break;
     case "server_tool_result":
-      broadcast({ type: "server_tool_result", taskId, toolId: event.toolId, toolName: event.toolName, content: event.content });
+      broadcast({
+        type: "server_tool_result",
+        taskId,
+        toolId: event.toolId,
+        toolName: event.toolName,
+        content: event.content,
+      });
       break;
     case "turn_complete": {
       const lastTurn = session.getLastTurn();
@@ -88,9 +95,12 @@ function handleStreamEvent(event: StreamEvent): void {
       currentText = "";
       break;
     }
-    case "token_usage":
-      session.addTokenUsage(event.usage);
-      broadcast({ type: "token_usage", usage: getTokenUsage() });
+    case "cost_update":
+      session.addCost(event.costMicrocents);
+      broadcast({ type: "cost_update", cost: { sessionCostMicrocents: session.getCostMicrocents() } });
+      break;
+    case "budget_notice":
+      broadcast({ type: "budget_notice", level: event.level, message: event.message });
       break;
     case "complete":
       broadcast({ type: "task_complete", taskId });
@@ -115,7 +125,7 @@ async function executeTask(taskFn: () => Promise<void>): Promise<void> {
 
 async function buildSessionInfo(): Promise<ServerMessage> {
   const tools = await loadTools();
-  const toolInfos: ToolInfo[] = tools.map(t => ({
+  const toolInfos: ToolInfo[] = tools.map((t) => ({
     name: t.definition.name,
     description: t.definition.description,
     parameters: Object.entries(t.definition.input_schema.properties || {}).map(([name, prop]) => ({
@@ -128,7 +138,7 @@ async function buildSessionInfo(): Promise<ServerMessage> {
   return {
     type: "session_info",
     history: session.getTurns(),
-    tokenUsage: getTokenUsage(),
+    cost: { sessionCostMicrocents: session.getCostMicrocents() },
     tools: toolInfos,
   };
 }
@@ -233,12 +243,6 @@ Deno.serve({ port: CONFIG.PORT, hostname: "::", ...tlsOptions }, async (req) => 
     session.addTurn(createTurn("user", body.content, currentTaskId));
     broadcast({ type: "task_start", taskId: currentTaskId });
 
-
-    // Show token budget at task start
-    const usage = getTokenUsage();
-    if (usage.totalTokens > 0) {
-      broadcast({ type: "system", content: `Session tokens: ${usage.totalTokens.toLocaleString()} (in: ${usage.inputTokens.toLocaleString()}, out: ${usage.outputTokens.toLocaleString()})`, level: "info" });
-    }
     executeTask(async () => {
       for await (const event of continueConversation(session.getLLMMessages(), () => stopRequested)) {
         handleStreamEvent(event);
@@ -262,17 +266,18 @@ Deno.serve({ port: CONFIG.PORT, hostname: "::", ...tlsOptions }, async (req) => 
     const result = await executeTool(body.name, body.args || {});
 
     const cmdTaskId = crypto.randomUUID();
+    const cmdToolId = crypto.randomUUID();
     broadcast({
       type: "tool_use",
       taskId: cmdTaskId,
-      toolId: crypto.randomUUID(),
+      toolId: cmdToolId,
       toolName: body.name,
       toolInput: body.args || {},
     });
     broadcast({
       type: "tool_result",
       taskId: cmdTaskId,
-      toolId: crypto.randomUUID(),
+      toolId: cmdToolId,
       toolOutput: result.content,
       toolError: result.isError,
     });
@@ -321,9 +326,11 @@ async function startAppCommSocket(): Promise<void> {
     for await (const conn of appCommListener!) {
       handleTalkConnection(conn);
     }
-  })().catch(() => { /* listener closed */ });
+  })().catch(() => {/* listener closed */});
 
-  try { await Deno.chmod(APP_SOCK, 0o770); } catch { /* non-fatal */ }
+  try {
+    await Deno.chmod(APP_SOCK, 0o770);
+  } catch { /* non-fatal */ }
   log(`App comm socket: ${APP_SOCK}`);
 }
 
@@ -378,8 +385,12 @@ async function handleTalkConnection(conn: Deno.Conn): Promise<void> {
         }
       }
     }
-  } catch { /* connection error */ } finally {
-    try { conn.close(); } catch { /* */ }
+  } catch {
+    /* connection error */
+  } finally {
+    try {
+      conn.close();
+    } catch { /* */ }
   }
 }
 
@@ -392,13 +403,17 @@ startAppCommSocket().catch((err) => {
 async function shutdown() {
   log("Shutting down gracefully...");
   for (const controller of sseClients) {
-    try { controller.close(); } catch { /* already closed */ }
+    try {
+      controller.close();
+    } catch { /* already closed */ }
   }
   sseClients.clear();
 
   if (appCommListener) {
     appCommListener.close();
-    try { await Deno.remove(APP_SOCK); } catch { /* already gone */ }
+    try {
+      await Deno.remove(APP_SOCK);
+    } catch { /* already gone */ }
   }
 
   await session.shutdown();

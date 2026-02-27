@@ -8,7 +8,11 @@ function formatArg(arg: unknown): string {
     return `${arg.name}: ${arg.message}${arg.stack ? "\n" + arg.stack : ""}`;
   }
   if (typeof arg === "object" && arg !== null) {
-    try { return JSON.stringify(arg, null, 2); } catch { return String(arg); }
+    try {
+      return JSON.stringify(arg, null, 2);
+    } catch {
+      return String(arg);
+    }
   }
   return String(arg);
 }
@@ -16,7 +20,7 @@ function writeLog(level: string, args: unknown[]): void {
   const timestamp = new Date().toISOString();
   const message = args.map(formatArg).join(" ");
 
-  const logLine = `[${timestamp}]${level ? ` ${level}:` : ''} ${message}\n`;
+  const logLine = `[${timestamp}]${level ? ` ${level}:` : ""} ${message}\n`;
   (level === "ERROR" ? console.error : console.log)(...args);
   Deno.writeTextFile(PATHS.LOG_FILE, logLine, { append: true }).catch(() => {});
 }

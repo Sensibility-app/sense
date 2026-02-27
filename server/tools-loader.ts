@@ -1,6 +1,12 @@
-import { join } from "jsr:@std/path@^1.0.0";
-import { ToolModule, ToolDefinition, ToolExecutor, validateToolModule, ToolResult } from "./tools/_shared/tool-utils.ts";
-import { log, error as logError } from "./logger.ts";
+import { join } from "@std/path";
+import {
+  ToolDefinition,
+  ToolExecutor,
+  ToolModule as _ToolModule,
+  ToolResult,
+  validateToolModule,
+} from "./tools/_shared/tool-utils.ts";
+import { error as logError, log } from "./logger.ts";
 import { PATHS } from "./config.ts";
 import type { PersistentSession } from "./persistent-session.ts";
 import type { ServerMessage } from "../shared/messages.ts";
@@ -94,15 +100,15 @@ export async function loadTools(): Promise<LoadedTool[]> {
 
 export async function getToolDefinitions(): Promise<ToolDefinition[]> {
   const tools = await loadTools();
-  return tools.map(t => t.definition);
+  return tools.map((t) => t.definition);
 }
 
 export async function executeTool(
   name: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
 ): Promise<ToolResult> {
   const tools = await loadTools();
-  const tool = tools.find(t => t.definition.name === name);
+  const tool = tools.find((t) => t.definition.name === name);
 
   if (!tool) {
     return {
@@ -120,4 +126,3 @@ export async function executeTool(
     };
   }
 }
-

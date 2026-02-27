@@ -1,8 +1,19 @@
 {
   "tasks": {
-    "start": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run --allow-ffi --allow-sys --allow-import server/main.ts"
+    "start": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run --allow-ffi --allow-sys --allow-import server/main.ts",
+    "lint": "deno lint",
+    "fmt": "deno fmt",
+    "fmt:check": "deno fmt --check"
   },
   "imports": {
+    "@std/path": "jsr:@std/path@^1.0.0",
+    "@std/fs": "jsr:@std/fs@^1.0.0",
+    "@std/crypto": "jsr:@std/crypto@^1.0.0",
+    "@std/encoding": "jsr:@std/encoding@^1.0.0",
+    "@deno/emit": "jsr:@deno/emit@^0.46.0",
+    "@cfa/gitignore-parser": "jsr:@cfa/gitignore-parser@^0.1.4",
+    "@mozilla/readability": "npm:@mozilla/readability@0.5.0",
+    "jsdom": "npm:jsdom@23.0.1",
     "think": "file:///data/sdk/think.ts",
     "browse": "file:///data/sdk/browse.ts",
     "talk": "file:///data/sdk/talk.ts"
@@ -10,5 +21,12 @@
   "compilerOptions": {
     "lib": ["deno.window", "dom"],
     "strict": true
+  },
+  "lint": {
+    "include": ["server/", "client/", "shared/"]
+  },
+  "fmt": {
+    "lineWidth": 120,
+    "include": ["server/", "client/", "shared/"]
   }
 }

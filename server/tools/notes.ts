@@ -1,15 +1,14 @@
 import { createTool, type ToolResult } from "./_shared/tool-utils.ts";
 import { PATHS } from "../config.ts";
-import { join } from "jsr:@std/path@^1.0.0";
-import { exists } from "jsr:@std/fs@^1.0.0";
+import { join } from "@std/path";
+import { exists } from "@std/fs";
 
 const NOTES_PATH = join(PATHS.BASE, "NOTES.md");
 
 export const { definition, executor } = createTool(
   {
     name: "notes",
-    description:
-      "Read or update your persistent notes (NOTES.md) — your long-term memory. " +
+    description: "Read or update your persistent notes (NOTES.md) — your long-term memory. " +
       "Survives conversation resets, compactions, and server restarts. " +
       "Store: key decisions, files modified, current task state, learnings, unresolved issues.",
     input_schema: {
