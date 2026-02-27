@@ -23,7 +23,16 @@ async function getSystemPrompt(): Promise<string> {
   if (!cachedSystemPrompt) {
     cachedSystemPrompt = await Deno.readTextFile(join(PATHS.BASE, "SYSTEM.md"));
   }
-  return cachedSystemPrompt;
+  // Notes are NOT cached — they change between tasks
+  let notes = "";
+  try {
+    notes = await Deno.readTextFile(join(PATHS.BASE, "NOTES.md"));
+  } catch {
+    // No notes file — that's fine
+  }
+  return notes
+    ? `${cachedSystemPrompt}\n\n<current_notes>\n${notes}\n</current_notes>`
+    : cachedSystemPrompt;
 }
 
 export function invalidateAgentCache(): void {
@@ -104,6 +113,7 @@ export async function* continueConversation(
     let currentThinking = "";
     let currentText = "";
     let currentTool: { id: string; name: string; json: string } | null = null;
+    let currentServerTool: { id: string; name: string; json: string } | null = null;
     let inputTokens = 0;
     let outputTokens = 0;
     let cacheCreationInputTokens = 0;
@@ -143,6 +153,7 @@ export async function* continueConversation(
 
         case "tool_input":
           if (currentTool) currentTool.json += event.json;
+          if (currentServerTool) currentServerTool.json += event.json;
           break;
 
         case "tool_done": {
@@ -175,10 +186,33 @@ export async function* continueConversation(
             yield { type: "text_complete", content: currentText };
             currentText = "";
           }
+          currentServerTool = { id: event.id, name: event.name, json: "" };
           yield { type: "server_tool_start", toolId: event.id, toolName: event.name };
           break;
 
+        case "server_tool_done": {
+          if (!currentServerTool) break;
+          let parsedInput: Record<string, unknown> = {};
+          try {
+            const raw = currentServerTool.json.trim();
+            if (raw && raw !== "{}") parsedInput = JSON.parse(raw);
+          } catch { /* ignore parse errors */ }
+          assistantBlocks.push({
+            type: "server_tool_use",
+            id: currentServerTool.id,
+            name: currentServerTool.name,
+            input: parsedInput,
+          });
+          currentServerTool = null;
+          break;
+        }
+
         case "server_tool_result":
+          assistantBlocks.push({
+            type: event.name,
+            tool_use_id: event.id,
+            content: event.content,
+          });
           yield { type: "server_tool_result", toolId: event.id, toolName: event.name, content: event.content };
           break;
 

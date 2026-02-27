@@ -233,6 +233,12 @@ Deno.serve({ port: CONFIG.PORT, hostname: "::", ...tlsOptions }, async (req) => 
     session.addTurn(createTurn("user", body.content, currentTaskId));
     broadcast({ type: "task_start", taskId: currentTaskId });
 
+
+    // Show token budget at task start
+    const usage = getTokenUsage();
+    if (usage.totalTokens > 0) {
+      broadcast({ type: "system", content: `Session tokens: ${usage.totalTokens.toLocaleString()} (in: ${usage.inputTokens.toLocaleString()}, out: ${usage.outputTokens.toLocaleString()})`, level: "info" });
+    }
     executeTask(async () => {
       for await (const event of continueConversation(session.getLLMMessages(), () => stopRequested)) {
         handleStreamEvent(event);

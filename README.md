@@ -17,6 +17,7 @@ Every tool is also a `/command`. Type `/help` to see what's available.
 | `read_file` | Read any file in the project |
 | `create_file` | Create a new file |
 | `edit_file` | Edit existing files with search/replace |
+| `write_file` | Overwrite an existing file with new content |
 | `glob` | Find files by pattern |
 | `search_files` | Search file contents with regex |
 | `eval` | Execute shell commands |

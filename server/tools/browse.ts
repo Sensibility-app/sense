@@ -52,6 +52,19 @@ export const { definition, executor } = createTool(
           type: "string",
           description: "Snapshot filter: 'interactive' (form elements only) or 'all' (default)",
         },
+        scrollX: {
+          type: "number",
+          description: "Horizontal scroll pixels (for 'scroll' action)",
+        },
+        scrollY: {
+          type: "number",
+          description: "Vertical scroll pixels (for 'scroll' action)",
+        },
+        direction: {
+          type: "string",
+          description: "Scroll shortcut (for 'scroll' action): up (500px), down (500px), top, bottom",
+          enum: ["up", "down", "top", "bottom"],
+        },
       },
       required: ["action"],
     },
@@ -107,6 +120,19 @@ export const { definition, executor } = createTool(
         return { content: result.message || "Hovered", isError: !result.success };
       }
       case "scroll": {
+        if (input.direction) {
+          const dir = input.direction as string;
+          const expressions: Record<string, string> = {
+            up: "window.scrollBy(0, -500)",
+            down: "window.scrollBy(0, 500)",
+            top: "window.scrollTo(0, 0)",
+            bottom: "window.scrollTo(0, document.body.scrollHeight)",
+          };
+          const expr = expressions[dir];
+          if (!expr) return { content: `Unknown direction: ${dir}`, isError: true };
+          await browse.evaluate(expr);
+          return { content: `Scrolled ${dir}`, isError: false };
+        }
         const x = Number(input.scrollX ?? 0);
         const y = Number(input.scrollY ?? 0);
         const result = await browse.scroll(x, y);

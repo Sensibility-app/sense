@@ -88,6 +88,10 @@ function handleMessage(message: ServerMessage): void {
       renderer.addBlock({ type: "tool_result", tool_use_id: message.toolId, content: message.toolOutput, is_error: message.toolError });
       break;
 
+    case "server_tool_start":
+      renderer.addBlock({ type: "server_tool_use", id: message.toolId, name: message.toolName, input: {} });
+      break;
+
     case "task_complete":
       renderer.finishTask();
       break;
@@ -148,6 +152,9 @@ function renderHistoryBlock(block: Block, toolResults: Map<string, { content: st
       }
       break;
     }
+    case "server_tool_use":
+      renderer.addBlock({ type: "server_tool_use", id: block.id, name: block.name, input: block.input });
+      break;
   }
 }
 

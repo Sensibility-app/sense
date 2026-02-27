@@ -8,6 +8,7 @@ type RenderBlock =
   | { type: "text"; content: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_use_id: string; content: string | ContentPart[]; is_error: boolean }
+  | { type: "server_tool_use"; id: string; name: string; input: unknown }
   | { type: "system"; content: string; level: string };
 
 export class Renderer {
@@ -67,7 +68,10 @@ export class Renderer {
         const last = this.lastElement();
         if (last?.classList.contains("thinking")) {
           const content = last.querySelector(".thinking-content") as HTMLElement;
-          content.textContent += block.content;
+          const currentText = content.dataset.rawText || "";
+          const newText = currentText + block.content;
+          content.dataset.rawText = newText;
+          this.scheduleMarkdown(content, newText);
         } else {
           this.createThinkingBlock(block.content);
         }
@@ -89,6 +93,10 @@ export class Renderer {
       }
 
       case "tool_use":
+        this.createToolUseBlock(block.id, block.name, block.input);
+        break;
+
+      case "server_tool_use":
         this.createToolUseBlock(block.id, block.name, block.input);
         break;
 
@@ -131,7 +139,8 @@ export class Renderer {
 
     const inner = document.createElement("div");
     inner.className = "thinking-content";
-    inner.textContent = content;
+    inner.dataset.rawText = content;
+    inner.innerHTML = this.parseMarkdown(content);
     details.appendChild(inner);
 
     el.appendChild(details);
